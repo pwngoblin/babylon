@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+
+<nmaprun scanner="nmap" args="nmap (curated scripts; args elided)" start="1795376545" startstr="Sun Nov 22 20:42:25 2026" version="7.993" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="7" services="12121,12222,13000,16379,18081-18083"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1795376545" endtime="1795376603"><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<ports><port protocol="tcp" portid="12121"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ftp" product="vsftpd" version="3.0.2" ostype="Unix" method="probed" conf="10"><cpe>cpe:/a:vsftpd:vsftpd:3.0.2</cpe></service><script id="banner" output="220 (vsFTPd 3.0.2)"/></port>
+<port protocol="tcp" portid="12222"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ssh" product="OpenSSH" version="8.4" extrainfo="protocol 2.0" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:8.4</cpe></service><script id="ssh-hostkey" output="&#xa;  3072 7d:5b:94:32:98:ce:fc:0d:1f:37:a3:a1:0c:be:91:1e (RSA)&#xa;  256 3f:9d:71:de:d2:06:e1:5d:15:e3:10:0c:f1:62:37:1e (ECDSA)&#xa;  256 c5:3e:f6:46:92:ca:20:6e:e9:55:9d:41:d4:d9:8f:ee (ED25519)"><table>
+<elem key="key">AAAAB3NzaC1yc2EAAAADAQABAAABgQDJOLdHGIXE51fgHxrGpDAmOj2yH7KpVlLa2t668+z2zjdMkVufOW6MJgLSXcfGWjVrPNchRU55Tw7VyJHytTPcfst3gGBdFas5bXagQ9xw6/kNChJ10yrkFNE0XcU8xseoHGdCogjxFcciVFo9c/INWiOTAr0VMXn5LXCpt9YRNzyvJrw/Bl01xprpwzmSArXiYvQoTZUxtV6vjDE+wkjbzG7o7K4AQL8UK2f50w4sKG5UcEJ4c/Qv83Gxx4O2C4/HiU8TD5puXi0OBJ4FmEY2Qq35QzZCXY0kH52AuunyhjCrFxiKJBUOcI2/UZKQ9KFUzems4x44DgMcDbv2QAylZ5Y/WdoE0ZAC1HiJkSOLr3113zaVxbE/m472oYGlea9YJQw3CX76Uj0VAw7UwdaF8uC0eNTsdYCqLavvEZc/iH1R8ai47HadbC9jZhMLwKF5Hn2Os5BGmFMgzdOYq0VEa7AvP7PQhnAyLo8Gqg4UtYZiC8VoXa81r2foQR+hM1c=</elem>
+<elem key="fingerprint">7d5b943298cefc0d1f37a3a10cbe911e</elem>
+<elem key="type">ssh-rsa</elem>
+<elem key="bits">3072</elem>
+</table>
+<table>
+<elem key="key">AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGQ2rGQ3m9SB3YJeliyeBGazU5H4t7b2n80Q2FZr0xIapVxoCJpt3YS9pw/pE7bfQvMY4tsuBh7hL5GSNysaafo=</elem>
+<elem key="fingerprint">3f9d71ded206e15d15e3100cf162371e</elem>
+<elem key="type">ecdsa-sha2-nistp256</elem>
+<elem key="bits">256</elem>
+</table>
+<table>
+<elem key="key">AAAAC3NzaC1lZDI1NTE5AAAAIDz4Iy3PSsMr6J6l5NyRlmfKqAMYD4hzt+rXzb7x+fpf</elem>
+<elem key="fingerprint">c53ef64692ca206ee9559d41d4d98fee</elem>
+<elem key="type">ssh-ed25519</elem>
+<elem key="bits">256</elem>
+</table>
+</script><script id="ssh2-enum-algos" output="&#xa;  kex_algorithms: (9)&#xa;      curve25519-sha256&#xa;      curve25519-sha256@libssh.org&#xa;      ecdh-sha2-nistp256&#xa;      ecdh-sha2-nistp384&#xa;      ecdh-sha2-nistp521&#xa;      diffie-hellman-group-exchange-sha256&#xa;      diffie-hellman-group16-sha512&#xa;      diffie-hellman-group18-sha512&#xa;      diffie-hellman-group14-sha256&#xa;  server_host_key_algorithms: (5)&#xa;      rsa-sha2-512&#xa;      rsa-sha2-256&#xa;      ssh-rsa&#xa;      ecdsa-sha2-nistp256&#xa;      ssh-ed25519&#xa;  encryption_algorithms: (6)&#xa;      chacha20-poly1305@openssh.com&#xa;      aes128-ctr&#xa;      aes192-ctr&#xa;      aes256-ctr&#xa;      aes128-gcm@openssh.com&#xa;      aes256-gcm@openssh.com&#xa;  mac_algorithms: (10)&#xa;      umac-64-etm@openssh.com&#xa;      umac-128-etm@openssh.com&#xa;      hmac-sha2-256-etm@openssh.com&#xa;      hmac-sha2-512-etm@openssh.com&#xa;      hmac-sha1-etm@openssh.com&#xa;      umac-64@openssh.com&#xa;      umac-128@openssh.com&#xa;      hmac-sha2-256&#xa;      hmac-sha2-512&#xa;      hmac-sha1&#xa;  compression_algorithms: (2)&#xa;      none&#xa;      zlib@openssh.com"><table key="kex_algorithms">
+<elem>curve25519-sha256</elem>
+<elem>curve25519-sha256@libssh.org</elem>
+<elem>ecdh-sha2-nistp256</elem>
+<elem>ecdh-sha2-nistp384</elem>
+<elem>ecdh-sha2-nistp521</elem>
+<elem>diffie-hellman-group-exchange-sha256</elem>
+<elem>diffie-hellman-group16-sha512</elem>
+<elem>diffie-hellman-group18-sha512</elem>
+<elem>diffie-hellman-group14-sha256</elem>
+</table>
+<table key="server_host_key_algorithms">
+<elem>rsa-sha2-512</elem>
+<elem>rsa-sha2-256</elem>
+<elem>ssh-rsa</elem>
+<elem>ecdsa-sha2-nistp256</elem>
+<elem>ssh-ed25519</elem>
+</table>
+<table key="encryption_algorithms">
+<elem>chacha20-poly1305@openssh.com</elem>
+<elem>aes128-ctr</elem>
+<elem>aes192-ctr</elem>
+<elem>aes256-ctr</elem>
+<elem>aes128-gcm@openssh.com</elem>
+<elem>aes256-gcm@openssh.com</elem>
+</table>
+<table key="mac_algorithms">
+<elem>umac-64-etm@openssh.com</elem>
+<elem>umac-128-etm@openssh.com</elem>
+<elem>hmac-sha2-256-etm@openssh.com</elem>
+<elem>hmac-sha2-512-etm@openssh.com</elem>
+<elem>hmac-sha1-etm@openssh.com</elem>
+<elem>umac-64@openssh.com</elem>
+<elem>umac-128@openssh.com</elem>
+<elem>hmac-sha2-256</elem>
+<elem>hmac-sha2-512</elem>
+<elem>hmac-sha1</elem>
+</table>
+<table key="compression_algorithms">
+<elem>none</elem>
+<elem>zlib@openssh.com</elem>
+</table>
+</script><script id="banner" output="SSH-2.0-OpenSSH_8.4"/></port>
+<port protocol="tcp" portid="13000"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="unknown" servicefp="SF-Port13000-TCP:V=7.993%I=2%D=11/22%Time=6B0345AC%P=arm-apple-darwin27.0.0%r(GetRequest,281E,&quot;HTTP/1\.1\x20200\x20OK\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20SAMEORIGIN\r\nFeature-Policy:\x20payment\x20&apos;self&apos;\r\nX-Recruiting:\x20/#/jobs\r\nAccept-Ranges:\x20bytes\r\nCache-Control:\x20public,\x20max-age=0\r\nLast-Modified:\x20Thu,\x2019\x20Nov\x202026\x2022:56:02\x20GMT\r\nETag:\x20W/\&quot;2667-1a1f6062bd0\&quot;\r\nContent-Type:\x20text/html;\x20charset=UTF-8\r\nContent-Length:\x209831\r\nVary:\x20Accept-Encoding\r\nDate:\x20Sun,\x2022\x20Nov\x202026\x2019:42:36\x20GMT\r\nConnection:\x20close\r\n\r\n&lt;!-&#45;\n\x20\x20~\x20Copyright\x20\(c\)\x202014-2026\x20Bjoern\x20Kimminich\x20&amp;\x20the\x20OWASP\x20Juice\x20Shop\x20contributors\.\n\x20\x20~\x20SPDX-License-Identifier:\x20MIT\n\x20\x20-&#45;&gt;\n\n&lt;!doctype\x20html&gt;\n&lt;html\x20lang=\&quot;en\&quot;\x20data-beasties-container&gt;\n&lt;head&gt;\n\x20\x20&lt;meta\x20charset=\&quot;utf-8\&quot;&gt;\n\x20\x20&lt;title&gt;OWASP\x20Juice\x20Shop&lt;/title&gt;\n\x20\x20&lt;meta\x20name=\&quot;description\&quot;\x20content=\&quot;Probably\x20the\x20most\x20modern\x20and\x20sophisticated\x20insecure\x20web\x20application\&quot;&gt;\n\x20\x20&lt;meta\x20name=\&quot;viewport\&quot;\x20content=\&quot;width=device-width,\x20initial-scale=1\&quot;&gt;\n\x20\x20&lt;link\x20rel=\&quot;preconnect\&quot;\x20href=\&quot;htt&quot;)%r(SSLSessionReq,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;)%r(TLSSessionReq,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;);" method="table" conf="3"/><script id="fingerprint-strings" output="&#xa;  GetRequest: &#xa;    HTTP/1.1 200 OK&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Content-Type-Options: nosniff&#xa;    X-Frame-Options: SAMEORIGIN&#xa;    Feature-Policy: payment &apos;self&apos;&#xa;    X-Recruiting: /#/jobs&#xa;    Accept-Ranges: bytes&#xa;    Cache-Control: public, max-age=0&#xa;    Last-Modified: Thu, 19 Nov 2026 22:56:02 GMT&#xa;    ETag: W/&quot;2667-1a1f6062bd0&quot;&#xa;    Content-Type: text/html; charset=UTF-8&#xa;    Content-Length: 9831&#xa;    Vary: Accept-Encoding&#xa;    Date: Sun, 22 Nov 2026 19:42:36 GMT&#xa;    Connection: close&#xa;    &lt;!-&#45;&#xa;    Copyright (c) 2014-2026 Bjoern Kimminich &amp; the OWASP Juice Shop contributors.&#xa;    SPDX-License-Identifier: MIT&#xa;    &lt;!doctype html&gt;&#xa;    &lt;html lang=&quot;en&quot; data-beasties-container&gt;&#xa;    &lt;head&gt;&#xa;    &lt;meta charset=&quot;utf-8&quot;&gt;&#xa;    &lt;title&gt;OWASP Juice Shop&lt;/title&gt;&#xa;    &lt;meta name=&quot;description&quot; content=&quot;Probably the most modern and sophisticated insecure web application&quot;&gt;&#xa;    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;&#xa;    &lt;link rel=&quot;preconnect&quot; href=&quot;htt&#xa;  SSLSessionReq, TLSSessionReq: &#xa;    HTTP/1.1 400 Bad Request&#xa;    Connection: close"><elem key="GetRequest">&#xa;    HTTP/1.1 200 OK&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Content-Type-Options: nosniff&#xa;    X-Frame-Options: SAMEORIGIN&#xa;    Feature-Policy: payment &apos;self&apos;&#xa;    X-Recruiting: /#/jobs&#xa;    Accept-Ranges: bytes&#xa;    Cache-Control: public, max-age=0&#xa;    Last-Modified: Thu, 19 Nov 2026 22:56:02 GMT&#xa;    ETag: W/&quot;2667-1a1f6062bd0&quot;&#xa;    Content-Type: text/html; charset=UTF-8&#xa;    Content-Length: 9831&#xa;    Vary: Accept-Encoding&#xa;    Date: Sun, 22 Nov 2026 19:42:36 GMT&#xa;    Connection: close&#xa;    &lt;!-&#45;&#xa;    Copyright (c) 2014-2026 Bjoern Kimminich &amp; the OWASP Juice Shop contributors.&#xa;    SPDX-License-Identifier: MIT&#xa;    &lt;!doctype html&gt;&#xa;    &lt;html lang=&quot;en&quot; data-beasties-container&gt;&#xa;    &lt;head&gt;&#xa;    &lt;meta charset=&quot;utf-8&quot;&gt;&#xa;    &lt;title&gt;OWASP Juice Shop&lt;/title&gt;&#xa;    &lt;meta name=&quot;description&quot; content=&quot;Probably the most modern and sophisticated insecure web application&quot;&gt;&#xa;    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;&#xa;    &lt;link rel=&quot;preconnect&quot; href=&quot;htt</elem>
+<elem key="SSLSessionReq, TLSSessionReq">&#xa;    HTTP/1.1 400 Bad Request&#xa;    Connection: close</elem>
+</script></port>
+<port protocol="tcp" portid="16379"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="redis" product="Redis key-value store" version="5.0.14" extrainfo="64 bits" method="probed" conf="10"><cpe>cpe:/a:redislabs:redis:5.0.14</cpe><cpe>cpe:/a:redis:redis:5.0.14</cpe></service><script id="redis-info" output="&#xa;  Version: 5.0.14&#xa;  Operating System: Linux 7.0.14-linuxkit aarch64&#xa;  Architecture: 64 bits&#xa;  Process ID: 1&#xa;  Used CPU (sys): 9.697251&#xa;  Used CPU (user): 6.975059&#xa;  Connected clients: 2&#xa;  Connected slaves: 0&#xa;  Used memory: 888.30K&#xa;  Role: master&#xa;  Bind addresses: &#xa;    0.0.0.0&#xa;  Client connections: &#xa;    172.19.0.1"><elem key="Version">5.0.14</elem>
+<elem key="Operating System">Linux 7.0.14-linuxkit aarch64</elem>
+<elem key="Architecture">64 bits</elem>
+<elem key="Process ID">1</elem>
+<elem key="Used CPU (sys)">9.697251</elem>
+<elem key="Used CPU (user)">6.975059</elem>
+<elem key="Connected clients">2</elem>
+<elem key="Connected slaves">0</elem>
+<elem key="Used memory">888.30K</elem>
+<elem key="Role">master</elem>
+<table key="Bind addresses">
+<elem>0.0.0.0</elem>
+</table>
+<table key="Client connections">
+<elem>172.19.0.1</elem>
+</table>
+</script></port>
+<port protocol="tcp" portid="18081"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="Apache httpd" version="2.4.49" extrainfo="(Unix)" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.49</cpe></service><script id="http-methods" output="&#xa;  Supported Methods: HEAD GET POST OPTIONS TRACE&#xa;  Potentially risky methods: TRACE"><table key="Supported Methods">
+<elem>HEAD</elem>
+<elem>GET</elem>
+<elem>POST</elem>
+<elem>OPTIONS</elem>
+<elem>TRACE</elem>
+</table>
+<table key="Potentially risky methods">
+<elem>TRACE</elem>
+</table>
+</script><script id="http-title" output="Site doesn&apos;t have a title (text/html)."></script></port>
+<port protocol="tcp" portid="18082"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="nginx" version="1.16.0" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx:1.16.0</cpe></service><script id="http-methods" output="&#xa;  Supported Methods: GET HEAD"><table key="Supported Methods">
+<elem>GET</elem>
+<elem>HEAD</elem>
+</table>
+</script><script id="http-title" output="Welcome to nginx!"><elem key="title">Welcome to nginx!</elem>
+</script></port>
+<port protocol="tcp" portid="18083"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="Apache httpd" version="2.4.25" extrainfo="(Debian)" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.25</cpe></service><script id="http-title" output="Did not follow redirect to login.php"><elem key="redirect_url">login.php</elem>
+</script><script id="http-methods" output="&#xa;  Supported Methods: GET HEAD POST OPTIONS"><table key="Supported Methods">
+<elem>GET</elem>
+<elem>HEAD</elem>
+<elem>POST</elem>
+<elem>OPTIONS</elem>
+</table>
+</script></port>
+</ports>
+<times srtt="136" rttvar="904" to="100000"/>
+</host>
+<runstats><finished time="1795376603" timestr="Sun Nov 22 20:43:23 2026" summary="Nmap done at Sun Nov 22 20:43:23 2026; 1 IP address (1 host up) scanned in 57.71 seconds" elapsed="57.71" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"babylon/internal/model"
@@ -59,6 +60,21 @@ func (s *Store) IngestHost(ctx context.Context, scanID int64, h model.Host) erro
 				nullable(p.Service.Version), nullable(p.Service.ExtraInfo), nullable(p.Service.Tunnel), string(cpes),
 				nullable(p.Service.Banner)); err != nil {
 				return err
+			}
+			for _, sc := range p.Scripts {
+				if sc.ID == "" || sc.Output == "" {
+					continue
+				}
+				out := sc.Output
+				if len(out) > 8192 {
+					out = out[:8192]
+				}
+				vb, _ := json.Marshal(out)
+				if _, err := tx.Exec(`INSERT INTO kb(scan_id,asset_id,key,value_json,source) VALUES(?,?,?,?,'nmap')
+					ON CONFLICT(scan_id,asset_id,key) DO UPDATE SET value_json=excluded.value_json`,
+					scanID, assetID, ScriptKey(p.Number, p.Proto, sc.ID), string(vb)); err != nil {
+					return err
+				}
 			}
 			if p.TLS == nil {
 				continue
@@ -154,6 +170,134 @@ func (s *Store) ListServices(ctx context.Context, scanID int64) ([]ServiceRow, e
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(weak), &r.TLSWeak)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ServiceInfo is an open service with the details engines need to choose checks.
+type ServiceInfo struct {
+	AssetID int64
+	Address string
+	Port    int
+	Proto   string
+	Name    string
+	Product string
+	Version string
+	Tunnel  string
+	CPEs    []string
+}
+
+// OpenServices returns services in state `open` for a scan, ordered by host and port.
+func (s *Store) OpenServices(ctx context.Context, scanID int64) ([]ServiceInfo, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT a.id, a.address, v.port, v.proto, COALESCE(v.name,''), COALESCE(v.product,''),
+		COALESCE(v.version,''), COALESCE(v.tunnel,''), v.cpes
+		FROM service v JOIN asset a ON a.id=v.asset_id
+		WHERE v.scan_id=? AND v.state='open' ORDER BY a.id, v.proto, v.port`, scanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ServiceInfo
+	for rows.Next() {
+		var si ServiceInfo
+		var cpes string
+		if err := rows.Scan(&si.AssetID, &si.Address, &si.Port, &si.Proto, &si.Name, &si.Product, &si.Version, &si.Tunnel, &cpes); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(cpes), &si.CPEs)
+		out = append(out, si)
+	}
+	return out, rows.Err()
+}
+
+// MergeKBList unions values into a JSON string-list fact (e.g. detected
+// technologies for a web endpoint) without losing earlier entries.
+func (s *Store) MergeKBList(ctx context.Context, scanID, assetID int64, key string, values []string, source string) error {
+	return s.W.Do(ctx, func(tx *sql.Tx) error {
+		var cur string
+		err := tx.QueryRow(`SELECT value_json FROM kb WHERE scan_id=? AND asset_id=? AND key=?`, scanID, assetID, key).Scan(&cur)
+		var list []string
+		if err == nil {
+			_ = json.Unmarshal([]byte(cur), &list)
+		} else if err != sql.ErrNoRows {
+			return err
+		}
+		have := map[string]bool{}
+		for _, v := range list {
+			have[v] = true
+		}
+		for _, v := range values {
+			if !have[v] {
+				have[v] = true
+				list = append(list, v)
+			}
+		}
+		sortStrings(list)
+		b, _ := json.Marshal(list)
+		_, err = tx.Exec(`INSERT INTO kb(scan_id,asset_id,key,value_json,source) VALUES(?,?,?,?,?)
+			ON CONFLICT(scan_id,asset_id,key) DO UPDATE SET value_json=excluded.value_json, source=excluded.source`,
+			scanID, assetID, key, string(b), source)
+		return err
+	})
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}
+
+// KBList reads a JSON string-list fact; missing keys yield nil.
+func (s *Store) KBList(ctx context.Context, scanID, assetID int64, key string) ([]string, error) {
+	var v string
+	err := s.DB.QueryRowContext(ctx, `SELECT value_json FROM kb WHERE scan_id=? AND asset_id=? AND key=?`, scanID, assetID, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	return out, json.Unmarshal([]byte(v), &out)
+}
+
+// ScriptKey is the knowledge-base key holding an NSE script's output.
+func ScriptKey(port int, proto, script string) string {
+	return fmt.Sprintf("Script/%d/%s/%s", port, proto, script)
+}
+
+// TLSRow is stored TLS information for one service.
+type TLSRow struct {
+	Port     int
+	Proto    string
+	Subject  string
+	Issuer   string
+	NotAfter string
+	KeyType  string
+	KeyBits  int
+	Weak     []string
+}
+
+// TLSForAsset returns TLS details for an asset's services in a scan.
+func (s *Store) TLSForAsset(ctx context.Context, scanID, assetID int64) ([]TLSRow, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT v.port, v.proto, COALESCE(t.subject,''), COALESCE(t.issuer,''), COALESCE(t.not_after,''),
+		COALESCE(t.key_type,''), COALESCE(t.key_bits,0), COALESCE(t.weak_json,'[]')
+		FROM tls_info t JOIN service v ON v.id=t.service_id WHERE v.scan_id=? AND v.asset_id=? ORDER BY v.port`, scanID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TLSRow
+	for rows.Next() {
+		var r TLSRow
+		var weak string
+		if err := rows.Scan(&r.Port, &r.Proto, &r.Subject, &r.Issuer, &r.NotAfter, &r.KeyType, &r.KeyBits, &weak); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(weak), &r.Weak)
 		out = append(out, r)
 	}
 	return out, rows.Err()

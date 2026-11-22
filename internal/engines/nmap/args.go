@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"babylon/internal/policy"
@@ -30,6 +31,29 @@ type Opts struct {
 	Privilege   Privilege
 	MaxRatePPS  int
 	HostTimeout time.Duration
+	Ports       string // validated port list overriding the template (e.g. "22,80,8000-8100"); "" = template default
+}
+
+// ValidPorts accepts only comma-separated ports and ranges within 1-65535, so a
+// user-supplied port list can never smuggle an option into the Nmap argv.
+func ValidPorts(s string) error {
+	if s == "" {
+		return nil
+	}
+	for _, part := range strings.Split(s, ",") {
+		lo, hi, isRange := strings.Cut(part, "-")
+		a, err := strconv.Atoi(lo)
+		if err != nil || a < 1 || a > 65535 {
+			return fmt.Errorf("invalid port spec %q", s)
+		}
+		if isRange {
+			b, err := strconv.Atoi(hi)
+			if err != nil || b < a || b > 65535 {
+				return fmt.Errorf("invalid port range %q", part)
+			}
+		}
+	}
+	return nil
 }
 
 // Command returns the executable and full argv, wrapping with sudo if needed.
@@ -107,12 +131,17 @@ func ScanArgs(res *policy.Resolved, targets []string, xmlPath string, o Opts) ([
 	} else {
 		args = append(args, "-sT")
 	}
-	switch t.Ports {
-	case "top1000":
+	if err := ValidPorts(o.Ports); err != nil {
+		return nil, err
+	}
+	switch {
+	case o.Ports != "":
+		args = append(args, "-p", o.Ports)
+	case t.Ports == "top1000":
 		args = append(args, "--top-ports", "1000")
-	case "all":
+	case t.Ports == "all":
 		args = append(args, "-p-")
-	case "":
+	case t.Ports == "":
 		return nil, fmt.Errorf("template %s defines no ports to scan", t.Name)
 	default:
 		return nil, fmt.Errorf("unknown port spec %q", t.Ports)

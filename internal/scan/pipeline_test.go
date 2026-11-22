@@ -60,7 +60,7 @@ func setup(t *testing.T, template string) (*store.Store, int64, *policy.Resolved
 func run(t *testing.T, st *store.Store, id int64, res *policy.Resolved) orchestrator.Summary {
 	t.Helper()
 	o, err := orchestrator.New(st, Stages(res, st, Options{Privilege: nmap.PrivRoot}), orchestrator.Config{
-		Classes: map[string]int{ClassNmap: 2}, DataDir: t.TempDir(), BackoffBase: time.Millisecond, MaxAttempts: 2,
+		Classes: map[string]int{ClassNmap: 2, ClassNative: 2, ClassNuclei: 1}, DataDir: t.TempDir(), BackoffBase: time.Millisecond, MaxAttempts: 2,
 	})
 	if err != nil {
 		t.Fatal(err)

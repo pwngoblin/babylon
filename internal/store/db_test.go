@@ -10,7 +10,7 @@ func TestOpenAndMigrate(t *testing.T) {
 	defer db.Close()
 
 	var v int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 2 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 4 {
 		t.Fatalf("user_version = %d, err = %v", v, err)
 	}
 	var fk int

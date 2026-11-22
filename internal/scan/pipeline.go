@@ -37,6 +37,11 @@ type Options struct {
 	SweepTimeout time.Duration // per job (default 15m)
 	ScanTimeout  time.Duration // per job (default 3h)
 	HostTimeout  time.Duration // nmap --host-timeout (default 30m)
+
+	Ports         string        // overrides the template's port list (validated)
+	NucleiDir     string        // nuclei-templates root; "" disables Nuclei stages
+	NucleiRate    int           // requests/second (default 100)
+	NucleiTimeout time.Duration // per job (default 45m)
 }
 
 func (o *Options) defaults() {
@@ -55,14 +60,29 @@ func (o *Options) defaults() {
 	if o.HostTimeout == 0 {
 		o.HostTimeout = 30 * time.Minute
 	}
+	if o.NucleiRate == 0 {
+		o.NucleiRate = 100
+	}
+	if o.NucleiTimeout == 0 {
+		o.NucleiTimeout = 45 * time.Minute
+	}
 }
 
 // Stages returns the stages implemented for the resolved template. Stages for
 // engines not yet built (Nuclei, native checks, CPE matching, audit) are added
 // here as they land.
 func Stages(res *policy.Resolved, st *store.Store, opt Options) []orchestrator.Stage {
+	stages, err := buildStages(res, st, opt)
+	if err != nil {
+		// Only possible if a built-in check is mis-declared; fail loudly in tests/dev.
+		panic("scan: invalid built-in stage configuration: " + err.Error())
+	}
+	return stages
+}
+
+func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestrator.Stage, error) {
 	opt.defaults()
-	nopt := nmap.Opts{Privilege: opt.Privilege, MaxRatePPS: res.Template.MaxRatePPS, HostTimeout: opt.HostTimeout}
+	nopt := nmap.Opts{Privilege: opt.Privilege, MaxRatePPS: res.Template.MaxRatePPS, HostTimeout: opt.HostTimeout, Ports: opt.Ports}
 
 	stages := []orchestrator.Stage{{
 		Name:  StageSweep,
@@ -84,7 +104,17 @@ func Stages(res *policy.Resolved, st *store.Store, opt Options) []orchestrator.S
 			}, nopt),
 		})
 	}
-	return stages
+	if res.Template.Nuclei && res.Template.Ports != "" && opt.NucleiDir != "" {
+		stages = append(stages, newNucleiRuntime(st, res, opt).stages()...)
+	}
+	if res.Native.Enabled && res.Template.Ports != "" {
+		ns, err := nativeStage(st, res)
+		if err != nil {
+			return nil, err
+		}
+		stages = append(stages, ns)
+	}
+	return stages, nil
 }
 
 func planSweep(chunk uint64) orchestrator.PlanFunc {

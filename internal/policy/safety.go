@@ -18,12 +18,45 @@ var (
 	// baseNSECategories are always allowed (read-only discovery).
 	baseNSECategories = []string{"default", "safe"}
 
-	// namedNSEScripts are allowed by exact name even though Nmap tags them
-	// "intrusive": they only perform TLS handshakes / read certificates, which
-	// is non-destructive. Every entry needs a justification here.
+	// namedNSEScripts is the curated, exact-name allowlist. Each entry has a
+	// written reason. All are read-only banner/configuration queries; the only
+	// "intrusive"-tagged one (ssl-enum-ciphers) is a documented exception:
+	// nmap tags it for handshake volume, not impact. A test verifies these
+	// against nmap's own category data so the list cannot drift unsafe.
 	namedNSEScripts = map[string]string{
-		"ssl-cert":         "reads the server certificate",
-		"ssl-enum-ciphers": "enumerates supported protocols/ciphers via handshakes (tagged intrusive by nmap for volume, not impact)",
+		"banner":             "reads the service greeting",
+		"ssl-cert":           "reads the server certificate",
+		"ssl-enum-ciphers":   "enumerates protocols/ciphers via handshakes (tagged intrusive by nmap for volume, not impact)",
+		"ssh2-enum-algos":    "lists SSH algorithms offered (weak-algorithm checks)",
+		"ssh-hostkey":        "reads SSH host key fingerprints",
+		"redis-info":         "reads INFO; succeeds only without authentication (unauthenticated Redis)",
+		"ftp-anon":           "tests anonymous FTP login (a read-only login attempt)",
+		"ftp-syst":           "asks FTP SYST/STAT",
+		"smb-protocols":      "lists dialects the SMB server supports (SMBv1 detection)",
+		"smb2-security-mode": "reads SMB2 signing configuration",
+		"smb-security-mode":  "reads SMB signing/authentication configuration",
+		"smb-os-discovery":   "reads OS information advertised over SMB",
+		"smb2-capabilities":  "reads SMB2 capabilities",
+		"rdp-ntlm-info":      "reads NTLM info advertised during RDP negotiation",
+		"http-title":         "reads the page title",
+		"http-methods":       "reads allowed HTTP methods via OPTIONS",
+		"mysql-info":         "reads the MySQL handshake banner",
+		"ms-sql-info":        "reads SQL Server instance info",
+		"dns-recursion":      "checks whether a DNS server recurses for arbitrary queries",
+		"ntp-info":           "reads NTP server info",
+		"snmp-info":          "reads SNMP system info (v1/v2c public community only)",
+		"telnet-ntlm-info":   "reads NTLM info from a Telnet service",
+		"vnc-info":           "reads VNC protocol/security types",
+		"mongodb-info":       "reads MongoDB server info (shows unauthenticated access)",
+		"memcached-info":     "reads memcached stats (shows unauthenticated access)",
+		"rtsp-methods":       "reads supported RTSP methods",
+		"imap-capabilities":  "reads IMAP CAPABILITY",
+		"pop3-capabilities":  "reads POP3 CAPA",
+		"smtp-commands":      "reads SMTP EHLO capabilities",
+		"nfs-showmount":      "lists NFS exports (read-only)",
+		"rpcinfo":            "queries the RPC portmapper",
+		"ldap-rootdse":       "reads the LDAP root DSE (anonymous, read-only)",
+		"x11-access":         "checks whether an X11 server accepts connections",
 	}
 
 	// vulnNSEScripts is the curated subset of `vuln` scripts. Each entry is only
@@ -151,32 +184,35 @@ func (n NSEConfig) ScriptExpr() (string, error) {
 	if err := n.Validate(); err != nil {
 		return "", err
 	}
-	cats := append([]string(nil), n.Categories...)
-	sort.Strings(cats)
-	expr := "("
-	for i, c := range cats {
-		if i > 0 {
-			expr += " or "
-		}
-		expr += c
+	var parts []string
+	if len(n.Categories) > 0 {
+		cats := append([]string(nil), n.Categories...)
+		sort.Strings(cats)
+		parts = append(parts, "("+strings.Join(cats, " or ")+") and not ("+strings.Join(DeniedNSECategories, " or ")+")")
 	}
-	expr += ") and not ("
-	for i, d := range DeniedNSECategories {
-		if i > 0 {
-			expr += " or "
-		}
-		expr += d
-	}
-	expr += ")"
-	// Named scripts are appended as extra comma-separated expressions; they are
-	// individually allowlisted and therefore exempt from the category subtraction.
+	// Named scripts are individually allowlisted, so they are exempt from the
+	// category subtraction; they are appended as comma-separated expressions.
 	named := append([]string(nil), n.Named...)
 	sort.Strings(named)
-	for _, nm := range named {
-		expr += "," + nm
+	parts = append(parts, named...)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("no NSE scripts configured")
 	}
-	return expr, nil
+	return strings.Join(parts, ","), nil
 }
+
+// CuratedNSEScripts returns the named allowlist in stable order.
+func CuratedNSEScripts() []string {
+	out := make([]string, 0, len(namedNSEScripts))
+	for k := range namedNSEScripts {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// NamedNSEReason explains why a named script is allowed ("" if it is not).
+func NamedNSEReason(name string) string { return namedNSEScripts[name] }
 
 // ScriptsForProduct returns curated scripts whose guard matches product.
 func (n NSEConfig) ScriptsForProduct(product string) []string {

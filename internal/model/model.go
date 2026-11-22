@@ -71,3 +71,66 @@ type TLSCipher struct {
 	Name     string
 	Strength string
 }
+
+// Finding is the normalized, engine-independent vulnerability record
+// (Nessus-style schema).
+type Finding struct {
+	Fingerprint string // stable identity across scans and engines
+	Address     string // asset IP
+	Port        int    // 0 = host-level
+	Proto       string // tcp | udp | ""
+	Title       string
+	Family      string
+	Severity    string // info | low | medium | high | critical
+	CVSS        *float64
+	CVSSVector  string
+	CVEs        []string
+	EPSS        *float64
+	Synopsis    string
+	Description string
+	Remediation string
+	Solution    string // VendorFix | Mitigation | Workaround | WillNotFix | ""
+	Confidence  string // tentative | firm | confirmed
+	Detection   string // behaviour | version | config
+	Engine      string // nuclei | native | cpematch | nmap | audit
+	EngineRef   string // template id / check id
+	Evidence    string // redacted, size-capped
+	RawRef      string
+}
+
+// Confidence levels, ordered weakest to strongest.
+const (
+	ConfTentative = "tentative"
+	ConfFirm      = "firm"
+	ConfConfirmed = "confirmed"
+)
+
+// ConfidenceRank orders confidence levels (higher = stronger).
+func ConfidenceRank(c string) int {
+	switch c {
+	case ConfConfirmed:
+		return 3
+	case ConfFirm:
+		return 2
+	case ConfTentative:
+		return 1
+	}
+	return 0
+}
+
+// SeverityRank orders severities (higher = worse).
+func SeverityRank(s string) int {
+	switch s {
+	case "critical":
+		return 5
+	case "high":
+		return 4
+	case "medium":
+		return 3
+	case "low":
+		return 2
+	case "info":
+		return 1
+	}
+	return 0
+}

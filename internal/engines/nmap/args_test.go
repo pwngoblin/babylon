@@ -75,9 +75,10 @@ func TestPortSpecs(t *testing.T) {
 	}
 }
 
-// Every template/flag combination that reaches Nmap must carry the full
-// denied-category subtraction in its --script expression.
-func TestScriptExpressionAlwaysSubtractsDenied(t *testing.T) {
+// Every template/flag combination that reaches Nmap must produce a script
+// expression containing only allowlisted names, plus the full denied-category
+// subtraction wherever a broad category is used.
+func TestScriptExpressionIsAlwaysAllowlisted(t *testing.T) {
 	for _, name := range []string{policy.TemplateBasic, policy.TemplateFullUnauth, policy.TemplateCredentialed} {
 		for _, active := range []bool{false, true} {
 			if active && name != policy.TemplateFullUnauth {
@@ -97,13 +98,21 @@ func TestScriptExpressionAlwaysSubtractsDenied(t *testing.T) {
 			if expr == "" {
 				t.Fatalf("%s: no --script", name)
 			}
-			for _, d := range policy.DeniedNSECategories {
-				if !strings.Contains(expr, d) {
-					t.Errorf("%s: script expr %q lacks %q", name, expr, d)
-				}
-			}
 			if !strings.Contains(expr, "ssl-enum-ciphers") {
 				t.Errorf("%s: TLS audit script missing from %q", name, expr)
+			}
+			if strings.Contains(expr, "(") { // broad categories present: must subtract everything denied
+				for _, d := range policy.DeniedNSECategories {
+					if !strings.Contains(expr, d) {
+						t.Errorf("%s: script expr %q lacks %q", name, expr, d)
+					}
+				}
+			} else {
+				for _, n := range strings.Split(expr, ",") {
+					if policy.NamedNSEReason(n) == "" {
+						t.Errorf("%s: %q is not an allowlisted script", name, n)
+					}
+				}
 			}
 		}
 	}
@@ -126,5 +135,18 @@ func TestCommandWrapsSudoNonInteractively(t *testing.T) {
 	tool, argv = Command(Opts{Privilege: PrivRoot}, []string{"-sn"})
 	if tool != "nmap" || argv[0] != "-sn" {
 		t.Errorf("tool=%s argv=%v", tool, argv)
+	}
+}
+
+func TestCustomPortsValidatedAndUsed(t *testing.T) {
+	r := resolve(t, policy.TemplateBasic, policy.Flags{})
+	args, err := ScanArgs(r, []string{"10.0.0.1"}, "x", Opts{Ports: "22,80,8000-8100"})
+	if err != nil || !has(args, "-p") || !has(args, "22,80,8000-8100") || has(args, "--top-ports") {
+		t.Fatalf("args=%v err=%v", args, err)
+	}
+	for _, bad := range []string{"-sS", "22,-p", "0", "65536", "80-79", "a", "22;ls", "22,", ",22", "--script=x", "1-2-3"} {
+		if _, err := ScanArgs(r, []string{"10.0.0.1"}, "x", Opts{Ports: bad}); err == nil {
+			t.Errorf("ports %q must be rejected", bad)
+		}
 	}
 }

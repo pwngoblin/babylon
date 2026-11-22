@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"net/netip"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -109,11 +110,7 @@ func TestSafetyInvariants(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					for _, d := range DeniedNSECategories {
-						if !strings.Contains(expr, d) {
-							t.Errorf("%s: expr %q does not subtract %q", name, expr, d)
-						}
-					}
+					assertExprSafe(t, name+" expr", expr, len(r.NSE.Categories) > 0)
 				}
 				if r.Nuclei.Enabled {
 					for _, d := range DeniedNucleiTags {
@@ -195,13 +192,91 @@ func TestDenyTablesGolden(t *testing.T) {
 func TestNamedScriptAllowlistAndExpr(t *testing.T) {
 	r, _ := Resolve(TemplateBasic, Flags{})
 	expr, err := r.NSE.ScriptExpr()
-	if err != nil || !strings.HasSuffix(expr, ",ssl-cert,ssl-enum-ciphers") {
+	if err != nil || !strings.Contains(expr, "ssl-cert") || !strings.Contains(expr, "ssl-enum-ciphers") || !strings.Contains(expr, "redis-info") {
 		t.Fatalf("expr=%q err=%v", expr, err)
+	}
+	if strings.Contains(expr, "default") || strings.Contains(expr, "safe") {
+		t.Fatalf("basic must use curated names only, got categories: %q", expr)
+	}
+	full, _ := Resolve(TemplateFullUnauth, Flags{})
+	fexpr, _ := full.NSE.ScriptExpr()
+	if !strings.HasPrefix(fexpr, "(default or safe) and not (") {
+		t.Fatalf("full keeps broad categories with subtraction: %q", fexpr)
 	}
 	if err := (NSEConfig{Named: []string{"http-slowloris"}}).Validate(); err == nil {
 		t.Error("arbitrary named script must be rejected")
 	}
 	if err := (NSEConfig{Named: []string{"ssl-cert"}}).Validate(); err != nil {
 		t.Error(err)
+	}
+	if _, err := (NSEConfig{}).ScriptExpr(); err == nil {
+		t.Error("empty NSE config must not produce an expression")
+	}
+	for _, n := range CuratedNSEScripts() {
+		if NamedNSEReason(n) == "" {
+			t.Errorf("script %s has no written justification", n)
+		}
+	}
+}
+
+// assertExprSafe checks an NSE --script expression: every bare token must be an
+// allowlisted script name (or part of the category clause), and when a category
+// clause is present it must subtract every denied category.
+func assertExprSafe(t *testing.T, label, expr string, hasCategories bool) {
+	t.Helper()
+	clause := ""
+	rest := expr
+	if hasCategories {
+		i := strings.Index(expr, "),")
+		if i < 0 {
+			i = len(expr) - 1
+		}
+		clause, rest = expr[:i+1], strings.TrimPrefix(expr[i+1:], ",")
+		for _, d := range DeniedNSECategories {
+			if !strings.Contains(clause, d) {
+				t.Errorf("%s: category clause %q does not subtract %q", label, clause, d)
+			}
+		}
+	}
+	if rest == "" {
+		return
+	}
+	for _, name := range strings.Split(rest, ",") {
+		if NamedNSEReason(name) == "" {
+			t.Errorf("%s: script %q is not in the named allowlist", label, name)
+		}
+	}
+}
+
+// TestNamedScriptsAgainstNmapCategories asks the installed nmap what categories
+// each allowlisted script really has, so the allowlist cannot drift unsafe
+// (e.g. after an nmap upgrade re-tags a script). Skipped without nmap.
+func TestNamedScriptsAgainstNmapCategories(t *testing.T) {
+	if _, err := exec.LookPath("nmap"); err != nil {
+		t.Skip("nmap not installed")
+	}
+	// The only permitted exception: handshake enumeration tagged intrusive for volume.
+	allowIntrusive := map[string]bool{"ssl-enum-ciphers": true}
+	for _, name := range CuratedNSEScripts() {
+		out, err := exec.Command("nmap", "--script-help", name).CombinedOutput()
+		if err != nil {
+			t.Errorf("script %s: nmap --script-help failed: %v", name, err)
+			continue
+		}
+		var cats string
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(line, "Categories:") {
+				cats = strings.TrimSpace(strings.TrimPrefix(line, "Categories:"))
+			}
+		}
+		if cats == "" {
+			t.Errorf("script %s: nmap reports no categories (does it exist?)", name)
+			continue
+		}
+		for _, c := range strings.Fields(cats) {
+			if contains(DeniedNSECategories, c) && !(c == "intrusive" && allowIntrusive[name]) {
+				t.Errorf("script %s has denied category %q (nmap says: %s)", name, c, cats)
+			}
+		}
 	}
 }

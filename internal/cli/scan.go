@@ -34,14 +34,18 @@ type scanOptions struct {
 	resume      int64
 	deny        []string
 	maxHosts    uint64
+	nucleiWork  int
+	ports       string
+	accuracy    string
 }
 
 // persistedOptions is stored in scan.options_json so a resume reproduces the run.
 type persistedOptions struct {
-	Flags     policy.Flags `json:"flags"`
-	Workers   int          `json:"workers"`
-	Sudo      bool         `json:"sudo"`
-	Privilege string       `json:"privilege"`
+	Flags    policy.Flags `json:"flags"`
+	Workers  int          `json:"workers"`
+	Sudo     bool         `json:"sudo"`
+	Accuracy string       `json:"accuracy"`
+	Ports    string       `json:"ports,omitempty"`
 }
 
 func newScanCmd() *cobra.Command {
@@ -70,6 +74,9 @@ resume an interrupted scan with --resume <id>.`,
 	f.BoolVar(&o.defaultCred, "check-default-creds", false, "enable default-credential checks (opt-in, may trigger lockouts)")
 	f.Int64Var(&o.resume, "resume", 0, "resume the scan with this id")
 	f.StringSliceVar(&o.deny, "deny", nil, "CIDR never to scan (repeatable)")
+	f.StringVar(&o.ports, "ports", "", "TCP ports to scan, e.g. 22,80,8000-8100 (default: template's list)")
+	f.IntVar(&o.nucleiWork, "nuclei-workers", 2, "concurrent nuclei processes")
+	f.StringVar(&o.accuracy, "accuracy", "normal", "report accuracy: normal (show unverified findings in their own section) or avoid-false-alarms (hide them)")
 	f.Uint64Var(&o.maxHosts, "max-hosts", 0, "refuse scans expanding to more addresses than this (default 1048576)")
 	return cmd
 }
@@ -95,6 +102,12 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 	st := store.New(db)
 	defer st.Close()
 
+	if err := nmap.ValidPorts(o.ports); err != nil {
+		return err
+	}
+	if o.accuracy != "normal" && o.accuracy != "avoid-false-alarms" {
+		return fmt.Errorf("invalid --accuracy %q (normal or avoid-false-alarms)", o.accuracy)
+	}
 	var scanID int64
 	var res *policy.Resolved
 	var po persistedOptions
@@ -131,6 +144,10 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 			return err
 		}
 		scanID = sc.ID
+		if po.Accuracy != "" {
+			o.accuracy = po.Accuracy
+		}
+		o.ports = po.Ports
 		if o.workers == 2 && po.Workers > 0 {
 			o.workers = po.Workers
 		}
@@ -167,7 +184,7 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 		for _, t := range resolved {
 			targets = append(targets, prefixString(t.Prefix))
 		}
-		po = persistedOptions{Flags: flags, Workers: o.workers, Sudo: o.useSudo}
+		po = persistedOptions{Flags: flags, Workers: o.workers, Sudo: o.useSudo, Accuracy: o.accuracy, Ports: o.ports}
 		if scanID, err = st.CreateScan(ctx, o.name, o.template, targets, po); err != nil {
 			return err
 		}
@@ -176,8 +193,16 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 		}
 	}
 
-	orch, err := orchestrator.New(st, scan.Stages(res, st, scan.Options{Privilege: priv}), orchestrator.Config{
-		Classes: map[string]int{scan.ClassNmap: o.workers},
+	sopt := scan.Options{Privilege: priv, Ports: o.ports}
+	if res.Template.Nuclei && res.Template.Ports != "" {
+		if _, _, n, ok, _ := st.FeedState(ctx, "nuclei-templates"); ok && n > 0 {
+			sopt.NucleiDir = nucleiDir(o.home)
+		} else {
+			fmt.Fprintln(errw, "warning: no Nuclei templates indexed; web/CVE template checks will be skipped. Run: babylon update-feeds")
+		}
+	}
+	orch, err := orchestrator.New(st, scan.Stages(res, st, sopt), orchestrator.Config{
+		Classes: map[string]int{scan.ClassNmap: o.workers, scan.ClassNuclei: o.nucleiWork, scan.ClassNative: 4},
 		DataDir: o.home,
 	})
 	if err != nil {
@@ -189,7 +214,7 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 	if err != nil {
 		return err
 	}
-	printSummary(out, ctx, st, scanID, sum, time.Since(start))
+	printSummary(out, ctx, st, scanID, sum, time.Since(start), o.accuracy)
 	if sum.Status == store.ScanCancelled {
 		fmt.Fprintf(out, "\nInterrupted. Resume with: babylon scan --resume %d\n", scanID)
 		return fmt.Errorf("scan cancelled")
@@ -238,9 +263,9 @@ func detectPrivilege(ctx context.Context, wantSudo bool) (nmap.Privilege, error)
 	return nmap.PrivSudo, nil
 }
 
-func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, sum orchestrator.Summary, took time.Duration) {
+func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, sum orchestrator.Summary, took time.Duration, accuracy string) {
 	fmt.Fprintf(w, "\nScan %d %s in %s\n", id, sum.Status, took.Round(time.Millisecond))
-	for _, stage := range []string{scan.StageSweep, scan.StagePortscan} {
+	for _, stage := range []string{scan.StageSweep, scan.StagePortscan, scan.StageNucleiDetect, scan.StageNucleiScan, scan.StageNative} {
 		c, ok := sum.Counts[stage]
 		if !ok {
 			continue
@@ -249,7 +274,7 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 		for _, n := range c {
 			total += n
 		}
-		fmt.Fprintf(w, "  %-9s %d/%d jobs done", stage, c[store.JobDone], total)
+		fmt.Fprintf(w, "  %-14s %d/%d jobs done", stage, c[store.JobDone], total)
 		if c[store.JobFailed] > 0 {
 			fmt.Fprintf(w, ", %d FAILED", c[store.JobFailed])
 		}
@@ -258,7 +283,14 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 	bg := context.WithoutCancel(ctx)
 	live, _ := st.LiveHosts(bg, id)
 	rows, _ := st.ListServices(bg, id)
-	fmt.Fprintf(w, "  %d live hosts, %d open services\n\n", len(live), len(rows))
+	findings, _ := st.ListFindings(bg, id, "")
+	cov, _ := st.CheckRunCounts(bg, id)
+	fmt.Fprintf(w, "  %d live hosts, %d open services, %d findings", len(live), len(rows), len(findings))
+	if n := cov["skipped"]; n > 0 {
+		fmt.Fprintf(w, " (%d service checks skipped: see coverage)", n)
+	}
+	fmt.Fprint(w, "\n\n")
+
 	last := ""
 	for _, r := range rows {
 		if r.Address != last {
@@ -275,4 +307,42 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 			fmt.Fprintf(w, "            ! %s\n", weak)
 		}
 	}
+	if len(findings) == 0 {
+		return
+	}
+	var verified, possible, informational []store.FindingRow
+	for _, f := range findings {
+		switch {
+		case f.Severity == "info":
+			informational = append(informational, f)
+		case f.Confidence == "tentative":
+			possible = append(possible, f)
+		default:
+			verified = append(verified, f)
+		}
+	}
+	section := func(title string, list []store.FindingRow) {
+		if len(list) == 0 {
+			return
+		}
+		fmt.Fprintf(w, "\n%s (%d)\n", title, len(list))
+		for _, f := range list {
+			where := f.Address
+			if f.Port != 0 {
+				where = fmt.Sprintf("%s:%d", f.Address, f.Port)
+			}
+			cve := ""
+			if len(f.CVEs) > 0 {
+				cve = "  " + strings.Join(f.CVEs, ",")
+			}
+			fmt.Fprintf(w, "  %-8s %-22s %s%s  [%s]\n", strings.ToUpper(f.Severity), where, f.Title, cve, strings.Join(f.Engines, "+"))
+		}
+	}
+	section("Findings", verified)
+	if accuracy != "avoid-false-alarms" {
+		section("Possible findings (version-based, unverified)", possible)
+	} else if len(possible) > 0 {
+		fmt.Fprintf(w, "\n%d possible findings hidden by --accuracy avoid-false-alarms (stored; nothing is deleted)\n", len(possible))
+	}
+	section("Informational", informational)
 }

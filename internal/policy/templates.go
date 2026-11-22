@@ -27,6 +27,7 @@ type Template struct {
 	OSDetect      bool
 	TLSAudit      bool
 	NSE           bool
+	NSECategories bool // also run the broad `default`/`safe` categories (Full template only)
 	Nuclei        bool
 	Native        bool
 	NativeMax     Safety
@@ -44,7 +45,7 @@ var templates = map[string]Template{
 	},
 	TemplateFullUnauth: {
 		Name: TemplateFullUnauth, Ports: "all", UDPTop: 100, ServiceDetect: true, OSDetect: true, TLSAudit: true,
-		NSE: true, Nuclei: true, Native: true, NativeMax: SafetyReadOnly, CPEMatch: true, MaxRatePPS: 300, Concurrency: 16,
+		NSE: true, NSECategories: true, Nuclei: true, Native: true, NativeMax: SafetyReadOnly, CPEMatch: true, MaxRatePPS: 300, Concurrency: 16,
 	},
 	TemplateCredentialed: {
 		Name: TemplateCredentialed, RequiresCreds: true, Ports: "top1000", ServiceDetect: true, TLSAudit: true,
@@ -75,9 +76,9 @@ func Resolve(name string, f Flags) (*Resolved, error) {
 	r := &Resolved{Template: t, Flags: f}
 
 	if t.NSE {
-		r.NSE = NSEConfig{Categories: append([]string(nil), baseNSECategories...), Scripts: vulnNSEScripts}
-		if t.TLSAudit {
-			r.NSE.Named = []string{"ssl-cert", "ssl-enum-ciphers"}
+		r.NSE = NSEConfig{Scripts: vulnNSEScripts, Named: CuratedNSEScripts()}
+		if t.NSECategories {
+			r.NSE.Categories = append([]string(nil), baseNSECategories...)
 		}
 	}
 	if t.Nuclei {

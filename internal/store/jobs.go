@@ -63,6 +63,7 @@ type JobSpec struct {
 	Engine   string
 	ChunkKey string
 	Targets  []string
+	Params   map[string]string // engine-specific parameters (e.g. nuclei tags)
 }
 
 type Job struct {
@@ -72,6 +73,7 @@ type Job struct {
 	Engine   string
 	ChunkKey string
 	Targets  []string
+	Params   map[string]string
 	Attempts int
 	RawDir   string
 }
@@ -150,8 +152,16 @@ func (s *Store) PlanStage(ctx context.Context, scanID int64, stage string, specs
 			if err != nil {
 				return err
 			}
-			r, err := tx.Exec(`INSERT OR IGNORE INTO scan_job(scan_id,stage,engine,chunk_key,targets_json,state) VALUES(?,?,?,?,?,?)`,
-				scanID, stage, nullable(sp.Engine), sp.ChunkKey, string(tj), JobQueued)
+			var params any
+			if len(sp.Params) > 0 {
+				pj, err := json.Marshal(sp.Params)
+				if err != nil {
+					return err
+				}
+				params = string(pj)
+			}
+			r, err := tx.Exec(`INSERT OR IGNORE INTO scan_job(scan_id,stage,engine,chunk_key,targets_json,params_json,state) VALUES(?,?,?,?,?,?,?)`,
+				scanID, stage, nullable(sp.Engine), sp.ChunkKey, string(tj), params, JobQueued)
 			if err != nil {
 				return err
 			}
@@ -196,7 +206,7 @@ func (s *Store) Claim(ctx context.Context, scanID int64, stage string, n int, wo
 	var jobs []Job
 	err := s.W.Do(ctx, func(tx *sql.Tx) error {
 		jobs = jobs[:0]
-		rows, err := tx.Query(`SELECT id,COALESCE(engine,''),chunk_key,targets_json,attempts FROM scan_job
+		rows, err := tx.Query(`SELECT id,COALESCE(engine,''),chunk_key,targets_json,attempts,params_json FROM scan_job
 			WHERE scan_id=? AND stage=? AND state=? AND (not_before IS NULL OR not_before<=?)
 			ORDER BY id LIMIT ?`, scanID, stage, JobQueued, ts(now), n)
 		if err != nil {
@@ -205,9 +215,16 @@ func (s *Store) Claim(ctx context.Context, scanID int64, stage string, n int, wo
 		for rows.Next() {
 			j := Job{ScanID: scanID, Stage: stage}
 			var tj string
-			if err := rows.Scan(&j.ID, &j.Engine, &j.ChunkKey, &tj, &j.Attempts); err != nil {
+			var pj sql.NullString
+			if err := rows.Scan(&j.ID, &j.Engine, &j.ChunkKey, &tj, &j.Attempts, &pj); err != nil {
 				rows.Close()
 				return err
+			}
+			if pj.Valid {
+				if err := json.Unmarshal([]byte(pj.String), &j.Params); err != nil {
+					rows.Close()
+					return err
+				}
 			}
 			if err := json.Unmarshal([]byte(tj), &j.Targets); err != nil {
 				rows.Close()
