@@ -332,3 +332,33 @@ func TestScaleThousandsOfJobs(t *testing.T) {
 	}
 	t.Logf("3000 jobs in %s", time.Since(start))
 }
+
+// Regression: a retry whose backoff expires between the claim attempt and the
+// next-due query used to leave the loop blocked forever (queued work, nothing
+// in flight, no timer). The window is about one DB round-trip wide, so sweep
+// backoffs across that scale to make hitting it effectively certain.
+func TestTinyBackoffNeverStalls(t *testing.T) {
+	st := newStore(t)
+	backoffs := []time.Duration{100 * time.Microsecond, 300 * time.Microsecond, 600 * time.Microsecond,
+		time.Millisecond, 1500 * time.Microsecond, 2 * time.Millisecond}
+	for _, bo := range backoffs {
+		for i := 0; i < 40; i++ {
+			id := newScan(t, st)
+			var failed sync.Map
+			h := func(_ context.Context, j store.Job) error {
+				if _, seen := failed.LoadOrStore(j.ChunkKey, true); !seen {
+					return errors.New("first attempt fails")
+				}
+				return nil
+			}
+			o := mustNew(t, st, []Stage{{Name: "s", Class: "a", Plan: planN(1), Handle: h}}, // ONE job: with others in flight the loop never idles
+				Config{MaxAttempts: 2, BackoffBase: bo})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			sum, err := o.Run(ctx, id)
+			cancel()
+			if err != nil || sum.Status != store.ScanCompleted {
+				t.Fatalf("backoff=%s iteration %d: sum=%+v err=%v", bo, i, sum, err)
+			}
+		}
+	}
+}

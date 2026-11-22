@@ -18,6 +18,14 @@ var (
 	// baseNSECategories are always allowed (read-only discovery).
 	baseNSECategories = []string{"default", "safe"}
 
+	// namedNSEScripts are allowed by exact name even though Nmap tags them
+	// "intrusive": they only perform TLS handshakes / read certificates, which
+	// is non-destructive. Every entry needs a justification here.
+	namedNSEScripts = map[string]string{
+		"ssl-cert":         "reads the server certificate",
+		"ssl-enum-ciphers": "enumerates supported protocols/ciphers via handshakes (tagged intrusive by nmap for volume, not impact)",
+	}
+
 	// vulnNSEScripts is the curated subset of `vuln` scripts. Each entry is only
 	// run when Nmap identified a matching product (see NSEGuards), because the
 	// spike showed blanket `vuln` produces false positives
@@ -66,6 +74,7 @@ func (s Safety) String() string {
 // NSEConfig is what the Nmap adapter is allowed to run.
 type NSEConfig struct {
 	Categories []string            // allowed categories
+	Named      []string            // exact-name scripts from namedNSEScripts (e.g. TLS audit)
 	Scripts    map[string][]string // curated vuln scripts → product guards
 }
 
@@ -89,6 +98,11 @@ func (n NSEConfig) Validate() error {
 	for _, c := range n.Categories {
 		if contains(DeniedNSECategories, c) {
 			return fmt.Errorf("denied NSE category %q in config", c)
+		}
+	}
+	for _, s := range n.Named {
+		if _, ok := namedNSEScripts[s]; !ok {
+			return fmt.Errorf("NSE script %q is not in the named allowlist", s)
 		}
 	}
 	for s := range n.Scripts {
@@ -153,7 +167,15 @@ func (n NSEConfig) ScriptExpr() (string, error) {
 		}
 		expr += d
 	}
-	return expr + ")", nil
+	expr += ")"
+	// Named scripts are appended as extra comma-separated expressions; they are
+	// individually allowlisted and therefore exempt from the category subtraction.
+	named := append([]string(nil), n.Named...)
+	sort.Strings(named)
+	for _, nm := range named {
+		expr += "," + nm
+	}
+	return expr, nil
 }
 
 // ScriptsForProduct returns curated scripts whose guard matches product.

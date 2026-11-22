@@ -76,6 +76,9 @@ func Resolve(name string, f Flags) (*Resolved, error) {
 
 	if t.NSE {
 		r.NSE = NSEConfig{Categories: append([]string(nil), baseNSECategories...), Scripts: vulnNSEScripts}
+		if t.TLSAudit {
+			r.NSE.Named = []string{"ssl-cert", "ssl-enum-ciphers"}
+		}
 	}
 	if t.Nuclei {
 		r.Nuclei = NucleiConfig{

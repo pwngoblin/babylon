@@ -129,6 +129,8 @@ babylon/
 ### 6.2 Discovery (Nmap)
 Sweep (`-sn`: ARP/ICMP/TCP), `-sV --version-light`, optional `-O`, `ssl-cert`/`ssl-enum-ciphers`, allowlisted NSE. Streaming XML. Produces live hosts, per-host ports, OS family and CPEs, which feed every later engine so nothing re-scans. Runs with sudo if available; otherwise connect-scan fallback with a coverage warning.
 
+**Implementation notes (step 3).** `ssl-cert` and `ssl-enum-ciphers` are allowlisted *by name*: Nmap tags the latter `intrusive` (handshake volume, not impact), so the category denylist would otherwise silently drop TLS auditing. Each named script needs a written justification in `policy/safety.go`. UDP scanning is not implemented yet (needs raw sockets; planned as its own stage). Nmap XML passes through a sanitizer before parsing: hostile banners can embed illegal character references that make Go's strict XML decoder reject the whole document, which would let a malicious service blind the scanner (covered by a test that fails without the sanitizer). Nmap runs unprivileged by default (connect scans); `--sudo` uses `sudo -n` and `--sudo` failures are reported before any scan row is created.
+
 ### 6.3 Nuclei
 Targets from service rows (URLs for HTTP(S), `host:port` for network protocols). Tech→tag mapping ∩ allowlist; pinned template commit; `-duc`, `-jsonl`, `-rl`, `-c`, `-timeout`. Evidence size-capped, secrets redacted.
 

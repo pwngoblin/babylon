@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///opt/homebrew/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.993 scan initiated Sun Nov 22 18:29:43 2026 as: nmap -sV -&#45;version-light -Pn -p 12121,12222,13000,16379,18081-18083 -&#45;script &quot;(default or safe or vuln) and not (intrusive or dos or exploit or brute or fuzzer or malware or external)&quot; -oX testdata/spike/nse/nse.xml -oN testdata/spike/nse/nse.txt 127.0.0.1 -->
+<nmaprun scanner="nmap" args="nmap -sV -&#45;version-light -Pn -p 12121,12222,13000,16379,18081-18083 -&#45;script &quot;(default or safe or vuln) and not (intrusive or dos or exploit or brute or fuzzer or malware or external)&quot; -oX testdata/spike/nse/nse.xml -oN testdata/spike/nse/nse.txt 127.0.0.1" start="1795368583" startstr="Sun Nov 22 18:29:43 2026" version="7.993" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="7" services="12121,12222,13000,16379,18081-18083"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<prescript><script id="broadcast-upnp-info" output=""></script></prescript><host starttime="1795368623" endtime="1795368780"><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+<hostname name="localhost" type="PTR"/>
+</hostnames>
+<ports><port protocol="tcp" portid="12121"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ftp" product="vsftpd" version="3.0.2" ostype="Unix" method="probed" conf="10"><cpe>cpe:/a:vsftpd:vsftpd:3.0.2</cpe></service><script id="unusual-port" output="ftp unexpected on port tcp/12121"/><script id="banner" output="220 (vsFTPd 3.0.2)"/></port>
+<port protocol="tcp" portid="12222"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ssh" product="OpenSSH" version="8.4" extrainfo="protocol 2.0" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:8.4</cpe></service><script id="ssh2-enum-algos" output="&#xa;  kex_algorithms: (9)&#xa;  server_host_key_algorithms: (5)&#xa;  encryption_algorithms: (6)&#xa;  mac_algorithms: (10)&#xa;  compression_algorithms: (2)"><table key="kex_algorithms">
+<elem>curve25519-sha256</elem>
+<elem>curve25519-sha256@libssh.org</elem>
+<elem>ecdh-sha2-nistp256</elem>
+<elem>ecdh-sha2-nistp384</elem>
+<elem>ecdh-sha2-nistp521</elem>
+<elem>diffie-hellman-group-exchange-sha256</elem>
+<elem>diffie-hellman-group16-sha512</elem>
+<elem>diffie-hellman-group18-sha512</elem>
+<elem>diffie-hellman-group14-sha256</elem>
+</table>
+<table key="server_host_key_algorithms">
+<elem>rsa-sha2-512</elem>
+<elem>rsa-sha2-256</elem>
+<elem>ssh-rsa</elem>
+<elem>ecdsa-sha2-nistp256</elem>
+<elem>ssh-ed25519</elem>
+</table>
+<table key="encryption_algorithms">
+<elem>chacha20-poly1305@openssh.com</elem>
+<elem>aes128-ctr</elem>
+<elem>aes192-ctr</elem>
+<elem>aes256-ctr</elem>
+<elem>aes128-gcm@openssh.com</elem>
+<elem>aes256-gcm@openssh.com</elem>
+</table>
+<table key="mac_algorithms">
+<elem>umac-64-etm@openssh.com</elem>
+<elem>umac-128-etm@openssh.com</elem>
+<elem>hmac-sha2-256-etm@openssh.com</elem>
+<elem>hmac-sha2-512-etm@openssh.com</elem>
+<elem>hmac-sha1-etm@openssh.com</elem>
+<elem>umac-64@openssh.com</elem>
+<elem>umac-128@openssh.com</elem>
+<elem>hmac-sha2-256</elem>
+<elem>hmac-sha2-512</elem>
+<elem>hmac-sha1</elem>
+</table>
+<table key="compression_algorithms">
+<elem>none</elem>
+<elem>zlib@openssh.com</elem>
+</table>
+</script><script id="banner" output="SSH-2.0-OpenSSH_8.4"/><script id="ssh-hostkey" output="&#xa;  3072 7d:5b:94:32:98:ce:fc:0d:1f:37:a3:a1:0c:be:91:1e (RSA)&#xa;  256 3f:9d:71:de:d2:06:e1:5d:15:e3:10:0c:f1:62:37:1e (ECDSA)&#xa;  256 c5:3e:f6:46:92:ca:20:6e:e9:55:9d:41:d4:d9:8f:ee (ED25519)"><table>
+<elem key="key">AAAAB3NzaC1yc2EAAAADAQABAAABgQDJOLdHGIXE51fgHxrGpDAmOj2yH7KpVlLa2t668+z2zjdMkVufOW6MJgLSXcfGWjVrPNchRU55Tw7VyJHytTPcfst3gGBdFas5bXagQ9xw6/kNChJ10yrkFNE0XcU8xseoHGdCogjxFcciVFo9c/INWiOTAr0VMXn5LXCpt9YRNzyvJrw/Bl01xprpwzmSArXiYvQoTZUxtV6vjDE+wkjbzG7o7K4AQL8UK2f50w4sKG5UcEJ4c/Qv83Gxx4O2C4/HiU8TD5puXi0OBJ4FmEY2Qq35QzZCXY0kH52AuunyhjCrFxiKJBUOcI2/UZKQ9KFUzems4x44DgMcDbv2QAylZ5Y/WdoE0ZAC1HiJkSOLr3113zaVxbE/m472oYGlea9YJQw3CX76Uj0VAw7UwdaF8uC0eNTsdYCqLavvEZc/iH1R8ai47HadbC9jZhMLwKF5Hn2Os5BGmFMgzdOYq0VEa7AvP7PQhnAyLo8Gqg4UtYZiC8VoXa81r2foQR+hM1c=</elem>
+<elem key="fingerprint">7d5b943298cefc0d1f37a3a10cbe911e</elem>
+<elem key="type">ssh-rsa</elem>
+<elem key="bits">3072</elem>
+</table>
+<table>
+<elem key="key">AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGQ2rGQ3m9SB3YJeliyeBGazU5H4t7b2n80Q2FZr0xIapVxoCJpt3YS9pw/pE7bfQvMY4tsuBh7hL5GSNysaafo=</elem>
+<elem key="fingerprint">3f9d71ded206e15d15e3100cf162371e</elem>
+<elem key="type">ecdsa-sha2-nistp256</elem>
+<elem key="bits">256</elem>
+</table>
+<table>
+<elem key="key">AAAAC3NzaC1lZDI1NTE5AAAAIDz4Iy3PSsMr6J6l5NyRlmfKqAMYD4hzt+rXzb7x+fpf</elem>
+<elem key="fingerprint">c53ef64692ca206ee9559d41d4d98fee</elem>
+<elem key="type">ssh-ed25519</elem>
+<elem key="bits">256</elem>
+</table>
+</script></port>
+<port protocol="tcp" portid="13000"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="unknown" servicefp="SF-Port13000-TCP:V=7.993%I=2%D=11/22%Time=6B0326BA%P=arm-apple-darwin27.0.0%r(GetRequest,281E,&quot;HTTP/1\.1\x20200\x20OK\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20SAMEORIGIN\r\nFeature-Policy:\x20payment\x20&apos;self&apos;\r\nX-Recruiting:\x20/#/jobs\r\nAccept-Ranges:\x20bytes\r\nCache-Control:\x20public,\x20max-age=0\r\nLast-Modified:\x20Thu,\x2019\x20Nov\x202026\x2022:56:02\x20GMT\r\nETag:\x20W/\&quot;2667-1a1f6062bd0\&quot;\r\nContent-Type:\x20text/html;\x20charset=UTF-8\r\nContent-Length:\x209831\r\nVary:\x20Accept-Encoding\r\nDate:\x20Sun,\x2022\x20Nov\x202026\x2017:30:34\x20GMT\r\nConnection:\x20close\r\n\r\n&lt;!-&#45;\n\x20\x20~\x20Copyright\x20\(c\)\x202014-2026\x20Bjoern\x20Kimminich\x20&amp;\x20the\x20OWASP\x20Juice\x20Shop\x20contributors\.\n\x20\x20~\x20SPDX-License-Identifier:\x20MIT\n\x20\x20-&#45;&gt;\n\n&lt;!doctype\x20html&gt;\n&lt;html\x20lang=\&quot;en\&quot;\x20data-beasties-container&gt;\n&lt;head&gt;\n\x20\x20&lt;meta\x20charset=\&quot;utf-8\&quot;&gt;\n\x20\x20&lt;title&gt;OWASP\x20Juice\x20Shop&lt;/title&gt;\n\x20\x20&lt;meta\x20name=\&quot;description\&quot;\x20content=\&quot;Probably\x20the\x20most\x20modern\x20and\x20sophisticated\x20insecure\x20web\x20application\&quot;&gt;\n\x20\x20&lt;meta\x20name=\&quot;viewport\&quot;\x20content=\&quot;width=device-width,\x20initial-scale=1\&quot;&gt;\n\x20\x20&lt;link\x20rel=\&quot;preconnect\&quot;\x20href=\&quot;htt&quot;)%r(SSLSessionReq,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;)%r(TLSSessionReq,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;);" method="table" conf="3"/><script id="fingerprint-strings" output="&#xa;  GetRequest: &#xa;    HTTP/1.1 200 OK&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Content-Type-Options: nosniff&#xa;    X-Frame-Options: SAMEORIGIN&#xa;    Feature-Policy: payment &apos;self&apos;&#xa;    X-Recruiting: /#/jobs&#xa;    Accept-Ranges: bytes&#xa;    Cache-Control: public, max-age=0&#xa;    Last-Modified: Thu, 19 Nov 2026 22:56:02 GMT&#xa;    ETag: W/&quot;2667-1a1f6062bd0&quot;&#xa;    Content-Type: text/html; charset=UTF-8&#xa;    Content-Length: 9831&#xa;    Vary: Accept-Encoding&#xa;    Date: Sun, 22 Nov 2026 17:30:34 GMT&#xa;    Connection: close&#xa;    &lt;!-&#45;&#xa;    Copyright (c) 2014-2026 Bjoern Kimminich &amp; the OWASP Juice Shop contributors.&#xa;    SPDX-License-Identifier: MIT&#xa;    &lt;!doctype html&gt;&#xa;    &lt;html lang=&quot;en&quot; data-beasties-container&gt;&#xa;    &lt;head&gt;&#xa;    &lt;meta charset=&quot;utf-8&quot;&gt;&#xa;    &lt;title&gt;OWASP Juice Shop&lt;/title&gt;&#xa;    &lt;meta name=&quot;description&quot; content=&quot;Probably the most modern and sophisticated insecure web application&quot;&gt;&#xa;    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;&#xa;    &lt;link rel=&quot;preconnect&quot; href=&quot;htt&#xa;  SSLSessionReq, TLSSessionReq: &#xa;    HTTP/1.1 400 Bad Request&#xa;    Connection: close"><elem key="GetRequest">&#xa;    HTTP/1.1 200 OK&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Content-Type-Options: nosniff&#xa;    X-Frame-Options: SAMEORIGIN&#xa;    Feature-Policy: payment &apos;self&apos;&#xa;    X-Recruiting: /#/jobs&#xa;    Accept-Ranges: bytes&#xa;    Cache-Control: public, max-age=0&#xa;    Last-Modified: Thu, 19 Nov 2026 22:56:02 GMT&#xa;    ETag: W/&quot;2667-1a1f6062bd0&quot;&#xa;    Content-Type: text/html; charset=UTF-8&#xa;    Content-Length: 9831&#xa;    Vary: Accept-Encoding&#xa;    Date: Sun, 22 Nov 2026 17:30:34 GMT&#xa;    Connection: close&#xa;    &lt;!-&#45;&#xa;    Copyright (c) 2014-2026 Bjoern Kimminich &amp; the OWASP Juice Shop contributors.&#xa;    SPDX-License-Identifier: MIT&#xa;    &lt;!doctype html&gt;&#xa;    &lt;html lang=&quot;en&quot; data-beasties-container&gt;&#xa;    &lt;head&gt;&#xa;    &lt;meta charset=&quot;utf-8&quot;&gt;&#xa;    &lt;title&gt;OWASP Juice Shop&lt;/title&gt;&#xa;    &lt;meta name=&quot;description&quot; content=&quot;Probably the most modern and sophisticated insecure web application&quot;&gt;&#xa;    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;&#xa;    &lt;link rel=&quot;preconnect&quot; href=&quot;htt</elem>
+<elem key="SSLSessionReq, TLSSessionReq">&#xa;    HTTP/1.1 400 Bad Request&#xa;    Connection: close</elem>
+</script></port>
+<port protocol="tcp" portid="16379"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="redis" product="Redis key-value store" version="5.0.14" extrainfo="64 bits" method="probed" conf="10"><cpe>cpe:/a:redislabs:redis:5.0.14</cpe><cpe>cpe:/a:redis:redis:5.0.14</cpe></service><script id="redis-info" output="&#xa;  Version: 5.0.14&#xa;  Operating System: Linux 7.0.14-linuxkit aarch64&#xa;  Architecture: 64 bits&#xa;  Process ID: 1&#xa;  Used CPU (sys): 0.815704&#xa;  Used CPU (user): 0.582594&#xa;  Connected clients: 4&#xa;  Connected slaves: 0&#xa;  Used memory: 929.14K&#xa;  Role: master&#xa;  Bind addresses: &#xa;    0.0.0.0&#xa;  Client connections: &#xa;    172.19.0.1"><elem key="Version">5.0.14</elem>
+<elem key="Operating System">Linux 7.0.14-linuxkit aarch64</elem>
+<elem key="Architecture">64 bits</elem>
+<elem key="Process ID">1</elem>
+<elem key="Used CPU (sys)">0.815704</elem>
+<elem key="Used CPU (user)">0.582594</elem>
+<elem key="Connected clients">4</elem>
+<elem key="Connected slaves">0</elem>
+<elem key="Used memory">929.14K</elem>
+<elem key="Role">master</elem>
+<table key="Bind addresses">
+<elem>0.0.0.0</elem>
+</table>
+<table key="Client connections">
+<elem>172.19.0.1</elem>
+</table>
+</script><script id="ssl-ccs-injection" output="No reply from server (TIMEOUT)"/></port>
+<port protocol="tcp" portid="18081"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="Apache httpd" version="2.4.49" extrainfo="(Unix)" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.49</cpe></service><script id="http-date" output="Sun, 22 Nov 2026 17:30:35 GMT; 0s from local time."><elem key="date">2026-11-22T17:30:35+00:00</elem>
+<elem key="delta">0.0</elem>
+</script><script id="http-trace" output="TRACE is enabled"/><script id="http-referer-checker" output="Couldn&apos;t find any cross-domain scripts."/><script id="http-mobileversion-checker" output="No mobile version detected."/><script id="http-comments-displayer" output="Couldn&apos;t find any comments."/><script id="http-useragent-tester" output="&#xa;  Status for browser useragent: 200&#xa;  Allowed User Agents: &#xa;    Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)&#xa;    libwww&#xa;    lwp-trivial&#xa;    libcurl-agent/1.0&#xa;    PHP/&#xa;    Python-urllib/2.5&#xa;    GT::WWW&#xa;    Snoopy&#xa;    MFC_Tear_Sample&#xa;    HTTP::Lite&#xa;    PHPCrawl&#xa;    URI::Fetch&#xa;    Zend_Http_Client&#xa;    http client&#xa;    PECL::HTTP&#xa;    Wget/1.13.4 (linux-gnu)&#xa;    WWW-Mechanize/1.34"><elem key="Status for browser useragent">200</elem>
+<table key="Allowed User Agents">
+<elem>Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)</elem>
+<elem>libwww</elem>
+<elem>lwp-trivial</elem>
+<elem>libcurl-agent/1.0</elem>
+<elem>PHP/</elem>
+<elem>Python-urllib/2.5</elem>
+<elem>GT::WWW</elem>
+<elem>Snoopy</elem>
+<elem>MFC_Tear_Sample</elem>
+<elem>HTTP::Lite</elem>
+<elem>PHPCrawl</elem>
+<elem>URI::Fetch</elem>
+<elem>Zend_Http_Client</elem>
+<elem>http client</elem>
+<elem>PECL::HTTP</elem>
+<elem>Wget/1.13.4 (linux-gnu)</elem>
+<elem>WWW-Mechanize/1.34</elem>
+</table>
+</script><script id="http-security-headers" output=""></script><script id="http-title" output="Site doesn&apos;t have a title (text/html)."></script><script id="http-headers" output="&#xa;  Date: Sun, 22 Nov 2026 17:30:35 GMT&#xa;  Server: Apache/2.4.49 (Unix)&#xa;  Last-Modified: Mon, 11 Jun 2007 18:53:14 GMT&#xa;  ETag: &quot;2d-432a5e4a73a80&quot;&#xa;  Accept-Ranges: bytes&#xa;  Content-Length: 45&#xa;  Connection: close&#xa;  Content-Type: text/html&#xa;  &#xa;  (Request type: HEAD)&#xa;"/><script id="http-methods" output="&#xa;  Potentially risky methods: TRACE"><table key="Potentially risky methods">
+<elem>TRACE</elem>
+</table>
+</script><script id="http-fetch" output="Please enter the complete path of the directory to save data in."><elem key="ERROR">Please enter the complete path of the directory to save data in.</elem>
+</script></port>
+<port protocol="tcp" portid="18082"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="nginx" version="1.16.0" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx:1.16.0</cpe></service><script id="http-security-headers" output=""></script><script id="http-date" output="Sun, 22 Nov 2026 17:30:35 GMT; 0s from local time."><elem key="date">2026-11-22T17:30:35+00:00</elem>
+<elem key="delta">0.0</elem>
+</script><script id="http-headers" output="&#xa;  Server: nginx/1.16.0&#xa;  Date: Sun, 22 Nov 2026 17:30:35 GMT&#xa;  Content-Type: text/html&#xa;  Content-Length: 612&#xa;  Last-Modified: Tue, 23 Apr 2019 10:18:21 GMT&#xa;  Connection: close&#xa;  ETag: &quot;5cbee66d-264&quot;&#xa;  Accept-Ranges: bytes&#xa;  &#xa;  (Request type: HEAD)&#xa;"/><script id="http-vuln-cve2011-3192" output="&#xa;  VULNERABLE:&#xa;  Apache byterange filter DoS&#xa;    State: VULNERABLE&#xa;    IDs:  BID:49303  CVE:CVE-2011-3192&#xa;      The Apache web server is vulnerable to a denial of service attack when numerous&#xa;      overlapping byte ranges are requested.&#xa;    Disclosure date: 2011-08-19&#xa;    References:&#xa;      https://seclists.org/fulldisclosure/2011/Aug/175&#xa;      https://www.tenable.com/plugins/nessus/55976&#xa;      https://www.securityfocus.com/bid/49303&#xa;      https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3192&#xa;"><table key="CVE-2011-3192">
+<elem key="title">Apache byterange filter DoS</elem>
+<elem key="state">VULNERABLE</elem>
+<table key="ids">
+<elem>BID:49303</elem>
+<elem>CVE:CVE-2011-3192</elem>
+</table>
+<table key="description">
+<elem>The Apache web server is vulnerable to a denial of service attack when numerous&#xa;overlapping byte ranges are requested.</elem>
+</table>
+<table key="dates">
+<table key="disclosure">
+<elem key="year">2011</elem>
+<elem key="month">08</elem>
+<elem key="day">19</elem>
+</table>
+</table>
+<elem key="disclosure">2011-08-19</elem>
+<table key="refs">
+<elem>https://seclists.org/fulldisclosure/2011/Aug/175</elem>
+<elem>https://www.tenable.com/plugins/nessus/55976</elem>
+<elem>https://www.securityfocus.com/bid/49303</elem>
+<elem>https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2011-3192</elem>
+</table>
+</table>
+</script><script id="http-comments-displayer" output="Couldn&apos;t find any comments."/><script id="http-title" output="Welcome to nginx!"><elem key="title">Welcome to nginx!</elem>
+</script><script id="http-mobileversion-checker" output="No mobile version detected."/><script id="http-useragent-tester" output="&#xa;  Status for browser useragent: 200&#xa;  Allowed User Agents: &#xa;    Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)&#xa;    libwww&#xa;    lwp-trivial&#xa;    libcurl-agent/1.0&#xa;    PHP/&#xa;    Python-urllib/2.5&#xa;    GT::WWW&#xa;    Snoopy&#xa;    MFC_Tear_Sample&#xa;    HTTP::Lite&#xa;    PHPCrawl&#xa;    URI::Fetch&#xa;    Zend_Http_Client&#xa;    http client&#xa;    PECL::HTTP&#xa;    Wget/1.13.4 (linux-gnu)&#xa;    WWW-Mechanize/1.34"><elem key="Status for browser useragent">200</elem>
+<table key="Allowed User Agents">
+<elem>Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)</elem>
+<elem>libwww</elem>
+<elem>lwp-trivial</elem>
+<elem>libcurl-agent/1.0</elem>
+<elem>PHP/</elem>
+<elem>Python-urllib/2.5</elem>
+<elem>GT::WWW</elem>
+<elem>Snoopy</elem>
+<elem>MFC_Tear_Sample</elem>
+<elem>HTTP::Lite</elem>
+<elem>PHPCrawl</elem>
+<elem>URI::Fetch</elem>
+<elem>Zend_Http_Client</elem>
+<elem>http client</elem>
+<elem>PECL::HTTP</elem>
+<elem>Wget/1.13.4 (linux-gnu)</elem>
+<elem>WWW-Mechanize/1.34</elem>
+</table>
+</script><script id="http-referer-checker" output="Couldn&apos;t find any cross-domain scripts."/><script id="http-fetch" output="Please enter the complete path of the directory to save data in."><elem key="ERROR">Please enter the complete path of the directory to save data in.</elem>
+</script></port>
+<port protocol="tcp" portid="18083"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" product="Apache httpd" version="2.4.25" extrainfo="(Debian)" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.25</cpe></service><script id="http-security-headers" output="&#xa;  Cache_Control: &#xa;    Header: Cache-Control: no-cache, must-revalidate&#xa;  Pragma: &#xa;    Header: Pragma: no-cache&#xa;  Expires: &#xa;    Header: Expires: Tue, 23 Jun 2009 12:00:00 GMT"><table key="Cache_Control">
+<elem>Header: Cache-Control: no-cache, must-revalidate</elem>
+</table>
+<table key="Pragma">
+<elem>Header: Pragma: no-cache</elem>
+</table>
+<table key="Expires">
+<elem>Header: Expires: Tue, 23 Jun 2009 12:00:00 GMT</elem>
+</table>
+</script><script id="http-headers" output="&#xa;  Date: Sun, 22 Nov 2026 17:30:38 GMT&#xa;  Server: Apache/2.4.25 (Debian)&#xa;  Set-Cookie: PHPSESSID=992vercdpeo881veuh8qm4qvn1; path=/&#xa;  Expires: Thu, 19 Nov 1981 08:52:00 GMT&#xa;  Cache-Control: no-store, no-cache, must-revalidate&#xa;  Pragma: no-cache&#xa;  Set-Cookie: PHPSESSID=992vercdpeo881veuh8qm4qvn1; path=/&#xa;  Set-Cookie: security=low&#xa;  Location: login.php&#xa;  Content-Length: 0&#xa;  Connection: close&#xa;  Content-Type: text/html; charset=UTF-8&#xa;  &#xa;  (Request type: GET)&#xa;"/><script id="http-title" output="Did not follow redirect to login.php"><elem key="redirect_url">login.php</elem>
+</script><script id="http-referer-checker" output="Couldn&apos;t find any cross-domain scripts."/><script id="http-cookie-flags" output="&#xa;  /: &#xa;    PHPSESSID: &#xa;      httponly flag not set"><table key="/">
+<table key="PHPSESSID">
+<elem>httponly flag not set</elem>
+</table>
+</table>
+</script><script id="http-mobileversion-checker" output="No mobile version detected."/><script id="http-date" output="Sun, 22 Nov 2026 17:30:37 GMT; 0s from local time."><elem key="date">2026-11-22T17:30:37+00:00</elem>
+<elem key="delta">0.0</elem>
+</script><script id="http-robots.txt" output="1 disallowed entry &#xa;/"/><script id="http-comments-displayer" output="Couldn&apos;t find any comments."/><script id="http-useragent-tester" output="&#xa;  Status for browser useragent: 200&#xa;  Redirected To: login.php&#xa;  Allowed User Agents: &#xa;    Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)&#xa;    libwww&#xa;    lwp-trivial&#xa;    libcurl-agent/1.0&#xa;    PHP/&#xa;    Python-urllib/2.5&#xa;    GT::WWW&#xa;    Snoopy&#xa;    MFC_Tear_Sample&#xa;    HTTP::Lite&#xa;    PHPCrawl&#xa;    URI::Fetch&#xa;    Zend_Http_Client&#xa;    http client&#xa;    PECL::HTTP&#xa;    Wget/1.13.4 (linux-gnu)&#xa;    WWW-Mechanize/1.34"><elem key="Status for browser useragent">200</elem>
+<elem key="Redirected To">login.php</elem>
+<table key="Allowed User Agents">
+<elem>Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)</elem>
+<elem>libwww</elem>
+<elem>lwp-trivial</elem>
+<elem>libcurl-agent/1.0</elem>
+<elem>PHP/</elem>
+<elem>Python-urllib/2.5</elem>
+<elem>GT::WWW</elem>
+<elem>Snoopy</elem>
+<elem>MFC_Tear_Sample</elem>
+<elem>HTTP::Lite</elem>
+<elem>PHPCrawl</elem>
+<elem>URI::Fetch</elem>
+<elem>Zend_Http_Client</elem>
+<elem>http client</elem>
+<elem>PECL::HTTP</elem>
+<elem>Wget/1.13.4 (linux-gnu)</elem>
+<elem>WWW-Mechanize/1.34</elem>
+</table>
+</script><script id="http-fetch" output="Please enter the complete path of the directory to save data in."><elem key="ERROR">Please enter the complete path of the directory to save data in.</elem>
+</script></port>
+</ports>
+<hostscript><script id="fcrdns" output="FAIL (No PTR record)"><table key="&lt;none&gt;">
+<elem key="status">fail</elem>
+<elem key="reason">No PTR record</elem>
+</table>
+</script><script id="port-states" output="&#xa;  tcp: &#xa;    open: 12121,12222,13000,16379,18081-18083"><table key="tcp">
+<elem key="open">12121,12222,13000,16379,18081-18083</elem>
+</table>
+</script></hostscript><times srtt="111" rttvar="945" to="100000"/>
+</host>
+<postscript><script id="reverse-index" output="&#xa;  12121/tcp: 127.0.0.1&#xa;  12222/tcp: 127.0.0.1&#xa;  13000/tcp: 127.0.0.1&#xa;  16379/tcp: 127.0.0.1&#xa;  18081/tcp: 127.0.0.1&#xa;  18082/tcp: 127.0.0.1&#xa;  18083/tcp: 127.0.0.1"><table key="12121/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="12222/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="13000/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="16379/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="18081/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="18082/tcp">
+<elem>127.0.0.1</elem>
+</table>
+<table key="18083/tcp">
+<elem>127.0.0.1</elem>
+</table>
+</script></postscript><runstats><finished time="1795368780" timestr="Sun Nov 22 18:33:00 2026" summary="Nmap done at Sun Nov 22 18:33:00 2026; 1 IP address (1 host up) scanned in 196.85 seconds" elapsed="196.85" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

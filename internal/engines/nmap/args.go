@@ -1,0 +1,135 @@
+package nmap
+
+import (
+	"fmt"
+	"net/netip"
+	"strconv"
+	"time"
+
+	"babylon/internal/policy"
+)
+
+// Privilege is how Nmap may be run.
+type Privilege int
+
+const (
+	PrivNone Privilege = iota // unprivileged: connect scans, no ARP/OS/UDP
+	PrivRoot                  // already root
+	PrivSudo                  // via `sudo -n` (non-interactive)
+)
+
+func (p Privilege) String() string {
+	return [...]string{"none", "root", "sudo"}[p]
+}
+
+// Raw reports whether raw sockets (SYN/ARP/OS detection) are available.
+func (p Privilege) Raw() bool { return p != PrivNone }
+
+// Opts are runtime limits for an Nmap invocation.
+type Opts struct {
+	Privilege   Privilege
+	MaxRatePPS  int
+	HostTimeout time.Duration
+}
+
+// Command returns the executable and full argv, wrapping with sudo if needed.
+func Command(o Opts, args []string) (tool string, argv []string) {
+	if o.Privilege == PrivSudo {
+		return "sudo", append([]string{"-n", "nmap"}, args...)
+	}
+	return "nmap", args
+}
+
+// validTarget accepts only literal IPs and CIDRs. Hostnames are resolved by the
+// scope guard before they ever reach an engine, and anything starting with '-'
+// could be parsed by Nmap as an option, so it is refused here as well as in the
+// policy layer (defense in depth).
+func validTarget(s string) error {
+	if s == "" || s[0] == '-' {
+		return fmt.Errorf("invalid nmap target %q", s)
+	}
+	if _, err := netip.ParsePrefix(s); err == nil {
+		return nil
+	}
+	if _, err := netip.ParseAddr(s); err == nil {
+		return nil
+	}
+	return fmt.Errorf("invalid nmap target %q: not an IP or CIDR", s)
+}
+
+func checkTargets(targets []string) error {
+	if len(targets) == 0 {
+		return fmt.Errorf("no targets")
+	}
+	for _, t := range targets {
+		if err := validTarget(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func common(xmlPath string, o Opts) []string {
+	args := []string{"-n", "--no-stylesheet", "-oX", xmlPath, "--max-retries", "2"}
+	if o.MaxRatePPS > 0 {
+		args = append(args, "--max-rate", strconv.Itoa(o.MaxRatePPS))
+	}
+	if o.HostTimeout > 0 {
+		args = append(args, "--host-timeout", fmt.Sprintf("%ds", int(o.HostTimeout.Seconds())))
+	}
+	return args
+}
+
+// SweepArgs builds a host-discovery-only (-sn) invocation.
+func SweepArgs(targets []string, xmlPath string, o Opts) ([]string, error) {
+	if err := checkTargets(targets); err != nil {
+		return nil, err
+	}
+	args := append([]string{"-sn", "-PE", "-PS22,80,443,445,3389", "-PA80,443"}, common(xmlPath, o)...)
+	return append(args, targets...), nil
+}
+
+// ScanArgs builds the port/service/TLS scan for a resolved policy. Every flag
+// originates from the template or the policy allowlists; the only caller data
+// are validated IP/CIDR targets and our own output path.
+func ScanArgs(res *policy.Resolved, targets []string, xmlPath string, o Opts) ([]string, error) {
+	if err := checkTargets(targets); err != nil {
+		return nil, err
+	}
+	if err := res.Validate(); err != nil {
+		return nil, err
+	}
+	t := res.Template
+	args := []string{"-Pn", "--open"}
+
+	if o.Privilege.Raw() {
+		args = append(args, "-sS")
+	} else {
+		args = append(args, "-sT")
+	}
+	switch t.Ports {
+	case "top1000":
+		args = append(args, "--top-ports", "1000")
+	case "all":
+		args = append(args, "-p-")
+	case "":
+		return nil, fmt.Errorf("template %s defines no ports to scan", t.Name)
+	default:
+		return nil, fmt.Errorf("unknown port spec %q", t.Ports)
+	}
+	if t.ServiceDetect {
+		args = append(args, "-sV", "--version-light")
+	}
+	if t.OSDetect && o.Privilege.Raw() {
+		args = append(args, "-O", "--osscan-limit", "--max-os-tries", "1")
+	}
+	if t.NSE {
+		expr, err := res.NSE.ScriptExpr()
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--script", expr, "--script-timeout", "60s")
+	}
+	args = append(args, common(xmlPath, o)...)
+	return append(args, targets...), nil
+}

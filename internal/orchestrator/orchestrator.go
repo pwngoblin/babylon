@@ -225,6 +225,12 @@ func (o *Orchestrator) Run(ctx context.Context, scanID int64) (Summary, error) {
 		if t, ok, err := o.st.NextDue(bg, scanID, time.Now()); err == nil && ok {
 			timer = time.After(time.Until(t) + time.Millisecond)
 		}
+		if timer == nil && inflight == 0 {
+			// Queued work exists, nothing is running and no future due time was
+			// found: a retry's backoff elapsed between the claim attempt and the
+			// NextDue query above. Go around again instead of blocking forever.
+			continue
+		}
 		select {
 		case r := <-done:
 			inflight--

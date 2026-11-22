@@ -191,3 +191,17 @@ func TestDenyTablesGolden(t *testing.T) {
 		}
 	}
 }
+
+func TestNamedScriptAllowlistAndExpr(t *testing.T) {
+	r, _ := Resolve(TemplateBasic, Flags{})
+	expr, err := r.NSE.ScriptExpr()
+	if err != nil || !strings.HasSuffix(expr, ",ssl-cert,ssl-enum-ciphers") {
+		t.Fatalf("expr=%q err=%v", expr, err)
+	}
+	if err := (NSEConfig{Named: []string{"http-slowloris"}}).Validate(); err == nil {
+		t.Error("arbitrary named script must be rejected")
+	}
+	if err := (NSEConfig{Named: []string{"ssl-cert"}}).Validate(); err != nil {
+		t.Error(err)
+	}
+}

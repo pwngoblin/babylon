@@ -19,6 +19,6 @@ func Execute(ctx context.Context) error {
 		SilenceErrors: false,
 		Version:       Version,
 	}
-	root.AddCommand(newDoctorCmd())
+	root.AddCommand(newDoctorCmd(), newScanCmd())
 	return root.ExecuteContext(ctx)
 }
