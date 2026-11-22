@@ -10,3 +10,7 @@ testdata/spike/kev.json
 /bin/
 /dist/
 .claude/
+
+# browser-test artifacts
+.playwright-mcp/
+ui-*.png

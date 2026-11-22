@@ -2,10 +2,8 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,10 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"babylon/internal/engines/nmap"
+	"babylon/internal/app"
 	"babylon/internal/orchestrator"
 	"babylon/internal/policy"
-	"babylon/internal/runner"
 	"babylon/internal/scan"
 	"babylon/internal/store"
 )
@@ -39,15 +36,6 @@ type scanOptions struct {
 	accuracy    string
 }
 
-// persistedOptions is stored in scan.options_json so a resume reproduces the run.
-type persistedOptions struct {
-	Flags    policy.Flags `json:"flags"`
-	Workers  int          `json:"workers"`
-	Sudo     bool         `json:"sudo"`
-	Accuracy string       `json:"accuracy"`
-	Ports    string       `json:"ports,omitempty"`
-}
-
 func newScanCmd() *cobra.Command {
 	var o scanOptions
 	cmd := &cobra.Command{
@@ -56,8 +44,8 @@ func newScanCmd() *cobra.Command {
 		Long: `Run a scan using a Nessus-style template (host_discovery, basic, full_unauth, credentialed).
 
 Targets are IPs, CIDRs or hostnames. Public addresses are refused unless
---i-have-authorization is given. Results are stored in the local database;
-resume an interrupted scan with --resume <id>.`,
+--i-have-authorization is given. Results are stored in the local database
+(see: babylon scans list); resume an interrupted scan with --resume <id>.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runScan(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), o, args)
 		},
@@ -76,7 +64,7 @@ resume an interrupted scan with --resume <id>.`,
 	f.StringSliceVar(&o.deny, "deny", nil, "CIDR never to scan (repeatable)")
 	f.StringVar(&o.ports, "ports", "", "TCP ports to scan, e.g. 22,80,8000-8100 (default: template's list)")
 	f.IntVar(&o.nucleiWork, "nuclei-workers", 2, "concurrent nuclei processes")
-	f.StringVar(&o.accuracy, "accuracy", "normal", "report accuracy: normal (show unverified findings in their own section) or avoid-false-alarms (hide them)")
+	f.StringVar(&o.accuracy, "accuracy", app.AccuracyNormal, "report accuracy: normal (show unverified findings in their own section) or avoid-false-alarms (hide them)")
 	f.Uint64Var(&o.maxHosts, "max-hosts", 0, "refuse scans expanding to more addresses than this (default 1048576)")
 	return cmd
 }
@@ -92,131 +80,50 @@ func defaultHome() string {
 }
 
 func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []string) error {
-	if err := os.MkdirAll(o.home, 0o700); err != nil {
-		return err
-	}
-	db, err := store.Open(filepath.Join(o.home, "babylon.db"))
+	a, err := app.Open(o.home)
 	if err != nil {
 		return err
 	}
-	st := store.New(db)
-	defer st.Close()
+	defer a.Close()
+	a.AllowSudo = true // an interactive user may use sudo; `sudo -n` fails safely without a cached ticket
 
-	if err := nmap.ValidPorts(o.ports); err != nil {
-		return err
-	}
-	if o.accuracy != "normal" && o.accuracy != "avoid-false-alarms" {
-		return fmt.Errorf("invalid --accuracy %q (normal or avoid-false-alarms)", o.accuracy)
-	}
-	var scanID int64
-	var res *policy.Resolved
-	var po persistedOptions
-
-	// Detect privileges before any database mutation so a failure here cannot
-	// leave an orphaned pending scan behind. On resume, --sudo is honoured from
-	// the original scan's options too.
-	useSudo := o.useSudo
-	if o.resume > 0 {
-		if sc, err := st.GetScan(ctx, o.resume); err == nil {
-			var prev persistedOptions
-			if json.Unmarshal(sc.Options, &prev) == nil {
-				useSudo = useSudo || prev.Sudo
-			}
-		}
-	}
-	priv, err := detectPrivilege(ctx, useSudo)
-	if err != nil {
-		return err
-	}
-	if !priv.Raw() {
-		fmt.Fprintln(errw, "warning: running unprivileged; using TCP connect scans, no ARP/OS detection (use --sudo or run as root for full fidelity)")
-	}
-
-	if o.resume > 0 {
-		sc, err := st.GetScan(ctx, o.resume)
+	id := o.resume
+	if id > 0 {
+		sc, err := a.St.GetScan(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := json.Unmarshal(sc.Options, &po); err != nil {
-			return fmt.Errorf("scan %d has unreadable options: %w", sc.ID, err)
-		}
-		if res, err = policy.Resolve(sc.Template, po.Flags); err != nil {
-			return err
-		}
-		scanID = sc.ID
-		if po.Accuracy != "" {
-			o.accuracy = po.Accuracy
-		}
-		o.ports = po.Ports
-		if o.workers == 2 && po.Workers > 0 {
-			o.workers = po.Workers
-		}
 		fmt.Fprintf(out, "Resuming scan %d (%s), previous status: %s\n", sc.ID, sc.Template, sc.Status)
 	} else {
-		flags := policy.Flags{AllowActive: o.allowActive, CheckDefaultCreds: o.defaultCred}
-		if res, err = policy.Resolve(o.template, flags); err != nil {
-			return err
-		}
-		if res.Template.RequiresCreds {
-			return fmt.Errorf("template %q needs credentials, which are not implemented yet", o.template)
-		}
 		raw, err := collectTargets(args, o.targetFile)
 		if err != nil {
 			return err
 		}
-		parsed, err := policy.ParseTargets(raw)
+		if err := a.PreflightPrivilege(ctx, o.useSudo); err != nil { // before any database write
+			return err
+		}
+		id, err = a.Create(ctx, app.Request{
+			Name: o.name, Template: o.template, Targets: raw, Ports: o.ports, Accuracy: o.accuracy,
+			AllowActive: o.allowActive, CheckDefaultCreds: o.defaultCred, Authorized: o.authorized, Sudo: o.useSudo,
+			Workers: o.workers, NucleiWorkers: o.nucleiWork, Deny: o.deny, MaxHosts: o.maxHosts,
+		})
 		if err != nil {
 			return err
-		}
-		guard := policy.Guard{AllowPublic: o.authorized, MaxHosts: o.maxHosts}
-		for _, d := range o.deny {
-			p, err := netip.ParsePrefix(d)
-			if err != nil {
-				return fmt.Errorf("invalid --deny %q: %w", d, err)
-			}
-			guard.Deny = append(guard.Deny, p)
-		}
-		resolved, err := guard.Check(ctx, parsed)
-		if err != nil {
-			return err
-		}
-		targets := make([]string, 0, len(resolved))
-		for _, t := range resolved {
-			targets = append(targets, prefixString(t.Prefix))
-		}
-		po = persistedOptions{Flags: flags, Workers: o.workers, Sudo: o.useSudo, Accuracy: o.accuracy, Ports: o.ports}
-		if scanID, err = st.CreateScan(ctx, o.name, o.template, targets, po); err != nil {
-			return err
-		}
-		if o.authorized {
-			fmt.Fprintln(errw, "warning: public-range guard disabled (--i-have-authorization); make sure you are authorized to scan these targets")
 		}
 	}
 
-	sopt := scan.Options{Privilege: priv, Ports: o.ports}
-	if res.Template.Nuclei && res.Template.Ports != "" {
-		if _, _, n, ok, _ := st.FeedState(ctx, "nuclei-templates"); ok && n > 0 {
-			sopt.NucleiDir = nucleiDir(o.home)
-		} else {
-			fmt.Fprintln(errw, "warning: no Nuclei templates indexed; web/CVE template checks will be skipped. Run: babylon update-feeds")
-		}
-	}
-	orch, err := orchestrator.New(st, scan.Stages(res, st, sopt), orchestrator.Config{
-		Classes: map[string]int{scan.ClassNmap: o.workers, scan.ClassNuclei: o.nucleiWork, scan.ClassNative: 4},
-		DataDir: o.home,
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "Scan %d: template=%s privilege=%s\n", scanID, res.Template.Name, priv)
+	fmt.Fprintf(out, "Scan %d started\n", id)
 	start := time.Now()
-	sum, err := orch.Run(ctx, scanID)
+	res, err := a.Run(ctx, id, o.useSudo)
+	for _, w := range res.Warnings {
+		fmt.Fprintln(errw, "warning:", w)
+	}
 	if err != nil {
 		return err
 	}
-	printSummary(out, ctx, st, scanID, sum, time.Since(start), o.accuracy)
-	if sum.Status == store.ScanCancelled {
-		fmt.Fprintf(out, "\nInterrupted. Resume with: babylon scan --resume %d\n", scanID)
+	printSummary(out, ctx, a.St, id, res.Summary, time.Since(start), res.Accuracy)
+	if res.Summary.Status == store.ScanCancelled {
+		fmt.Fprintf(out, "\nInterrupted. Resume with: babylon scan --resume %d\n", id)
 		return fmt.Errorf("scan cancelled")
 	}
 	return nil
@@ -242,26 +149,7 @@ func collectTargets(args []string, file string) ([]string, error) {
 	return out, nil
 }
 
-func prefixString(p netip.Prefix) string {
-	if p.Bits() == p.Addr().BitLen() {
-		return p.Addr().String()
-	}
-	return p.String()
-}
-
-func detectPrivilege(ctx context.Context, wantSudo bool) (nmap.Privilege, error) {
-	if os.Geteuid() == 0 {
-		return nmap.PrivRoot, nil
-	}
-	if !wantSudo {
-		return nmap.PrivNone, nil
-	}
-	// sudo -n never prompts: it succeeds only if a cached ticket or NOPASSWD rule exists.
-	if _, err := runner.Run(ctx, runner.Spec{Tool: "sudo", Args: []string{"-n", "true"}, Timeout: 10 * time.Second}); err != nil {
-		return nmap.PrivNone, fmt.Errorf("--sudo given but `sudo -n` is not usable (run `sudo -v` first, or configure NOPASSWD for nmap): %w", err)
-	}
-	return nmap.PrivSudo, nil
-}
+type orchestratorSummary = orchestrator.Summary
 
 func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, sum orchestrator.Summary, took time.Duration, accuracy string) {
 	fmt.Fprintf(w, "\nScan %d %s in %s\n", id, sum.Status, took.Round(time.Millisecond))

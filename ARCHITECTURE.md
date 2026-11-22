@@ -166,6 +166,8 @@ Rules: exact command/script allowlist; host-key verification; no sudo by default
 - **Priority**: KEV → EPSS → CVSS → exploit-exists → asset criticality (one file, documented in report appendix).
 - **Diff**: occurrence-set comparison; *resolved* only if the producing job completed for that asset.
 
+**Finding identity must stay stable.** A finding's fingerprint is `hash(asset, port/proto, CVE set | canonical check key)`. The canonical-key table (`correlate.CheckKey`) merges the same non-CVE issue reported by different engines (e.g. native `redis-unauth` and Nuclei `exposed-redis`). Changing a key changes identity, so history diffs would show the old finding as resolved and the new one as new (this happened once during development, before any release). After the first release, key changes need a migration that rewrites stored fingerprints.
+
 ### 6.8 Reporting (clients/management)
 One `ReportModel` → HTML (self-contained via `embed.FS`, auto-escaped, print-friendly), Markdown, JSON (versioned). Executive summary first (posture, KEV count, top remediations, coverage, trend), branding config, then technical detail with confidence-separated sections. Coverage section lists per-host: ports scanned, engines run, credentialed login status, jobs failed. Phase 3: `.nessus` v2 and generic import/export.
 

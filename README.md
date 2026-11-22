@@ -45,8 +45,18 @@ go build -o babylon ./cmd/babylon
 ./babylon update-feeds                       # download + index Nuclei templates
 ./babylon scan 192.168.1.0/24 -t basic        # discovery, ports, services, TLS, vulnerabilities
 ./babylon scan --resume 3                    # resume an interrupted scan
+./babylon serve                              # local web UI: configure, start and track scans
+./babylon scans list                         # stored scan history
+./babylon scans export 3 --format md         # report (md, json, csv)
+./babylon scans diff 2 3                     # new vs. not-seen findings
 go test ./...          # add -short to skip the 3,000-job scale test
 ```
+
+### Web UI
+
+`babylon serve` starts a local web interface (default `127.0.0.1:8834`) with a Nessus-style workflow: pick a template, enter targets, start the scan, watch live progress, then browse findings, hosts and coverage, compare scans, and export reports. It prints a URL with a one-time access token. Access is limited to your machine: loopback only, a token-for-cookie sign-in, Host-header and CSRF checks, and a strict Content-Security-Policy. Stopping the server pauses running scans so they can be resumed.
+
+All results are stored in a local SQLite database (`~/.babylon/babylon.db`) and are kept until you delete them.
 
 ### Test lab (optional)
 
@@ -69,7 +79,7 @@ docker compose -f deploy/lab/docker-compose.yml up -d
 ## Roadmap
 
 1. **Phase 0 (done):** skeleton, runner, schema, lab, coverage and NVD-ingest spikes.
-2. **Phase 1 (in progress):** policy and safety (done), orchestrator with chunking, retries and resume (done), Nmap engine and `babylon scan` (done), Nuclei engine with service-aware template selection (done), native Nessus-style checks (done), CPE matcher, feeds, correlation, HTML/Markdown/JSON reports.
+2. **Phase 1 (in progress):** policy and safety (done), orchestrator with chunking, retries and resume (done), Nmap engine and `babylon scan` (done), Nuclei engine with service-aware template selection (done), native Nessus-style checks (done), local web UI and persistent scan history (done), CPE matcher, feeds, correlation, HTML/Markdown/JSON reports.
 3. **Phase 2:** credentialed audits (Linux, containers, macOS, Windows), root-cause grouping, scan diffing, hardening checks.
 4. **Phase 3:** more native checks, `.nessus` import/export, remote agents, scheduling.
 
