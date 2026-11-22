@@ -2,7 +2,7 @@
 
 A local-first, open-source vulnerability and configuration scanner with Nessus-style scan policies and client-ready reports, built entirely on open data and tools.
 
-> **Status: pre-alpha (Phase 0 complete, Phase 1 in progress).** There is no usable scanner yet. What exists: the project skeleton, a safe subprocess runner, the SQLite schema, the policy/safety layer, and a measured coverage spike. See [Roadmap](#roadmap).
+> **Status: pre-alpha (Phase 0 complete, Phase 1 in progress).** There is no usable scanner yet. What exists: the project skeleton, a safe subprocess runner, the SQLite schema with a batched single-writer, the policy/safety layer, a resumable job orchestrator, and a measured coverage spike. See [Roadmap](#roadmap).
 
 ## What it will be
 
@@ -42,7 +42,7 @@ Requires Go 1.27+, and `nmap` and `nuclei` on your PATH (`trivy` optional).
 ```
 go build -o babylon ./cmd/babylon
 ./babylon doctor
-go test ./...
+go test ./...          # add -short to skip the 3,000-job scale test
 ```
 
 ### Test lab (optional)
@@ -65,7 +65,7 @@ docker compose -f deploy/lab/docker-compose.yml up -d
 ## Roadmap
 
 1. **Phase 0 (done):** skeleton, runner, schema, lab, coverage and NVD-ingest spikes.
-2. **Phase 1 (in progress):** policy and safety (done), orchestrator with chunking/resume, Nmap + Nuclei + native + CPE engines, feeds, correlation, HTML/Markdown/JSON reports.
+2. **Phase 1 (in progress):** policy and safety (done), orchestrator with chunking, retries and resume (done), Nmap + Nuclei + native + CPE engines, feeds, correlation, HTML/Markdown/JSON reports.
 3. **Phase 2:** credentialed audits (Linux, containers, macOS, Windows), root-cause grouping, scan diffing, hardening checks.
 4. **Phase 3:** more native checks, `.nessus` import/export, remote agents, scheduling.
 

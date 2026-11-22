@@ -196,7 +196,15 @@ CREATE TABLE scan_job (
   state TEXT NOT NULL CHECK(state IN ('queued','running','done','failed','skipped')),
   attempts INTEGER NOT NULL DEFAULT 0, worker TEXT,
   started_at TEXT, finished_at TEXT, error TEXT, raw_dir TEXT,
+  not_before TEXT,                      -- retry backoff (migration 0002)
   UNIQUE(scan_id, stage, chunk_key)
+);
+
+-- migration 0002: a stage is planned once; planning is idempotent so resume never duplicates jobs
+CREATE TABLE scan_stage (
+  scan_id INTEGER NOT NULL REFERENCES scan(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL, planned_at TEXT NOT NULL,
+  PRIMARY KEY(scan_id, stage)
 );
 CREATE INDEX idx_job_claim ON scan_job(scan_id, state, stage);
 
