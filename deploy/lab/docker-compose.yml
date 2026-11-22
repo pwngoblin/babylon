@@ -1,0 +1,36 @@
+# Babylon Phase 0 lab: deliberately vulnerable targets.
+# Everything binds to 127.0.0.1 only. NEVER expose these to a network.
+# Image tags marked [VERIFY] must be confirmed to pull/behave as expected.
+name: babylon-lab
+
+services:
+  httpd-2449:            # CVE-2021-41773 path traversal (Apache 2.4.49)
+    image: httpd:2.4.49
+    ports: ["127.0.0.1:18081:80"]
+
+  redis-noauth:          # unauthenticated Redis (misconfig, no CVE)
+    image: redis:5.0
+    command: ["redis-server", "--protected-mode", "no"]
+    ports: ["127.0.0.1:16379:6379"]
+
+  nginx-old:             # outdated nginx; CPE→CVE breadth test
+    image: nginx:1.16.0
+    ports: ["127.0.0.1:18082:80"]
+
+  dvwa:                  # [VERIFY] classic vulnerable web app
+    image: vulnerables/web-dvwa
+    ports: ["127.0.0.1:18083:80"]
+
+  juice-shop:            # [VERIFY] modern vulnerable web app
+    image: bkimminich/juice-shop
+    ports: ["127.0.0.1:13000:3000"]
+
+  openssh-old:           # outdated OpenSSH for weak-algorithm + CPE tests [VERIFY tag]
+    image: linuxserver/openssh-server:version-8.4_p1-r3
+    environment: [PASSWORD_ACCESS=true, USER_NAME=audit, USER_PASSWORD=audit]
+    ports: ["127.0.0.1:12222:2222"]
+
+  ftp-anon:              # anonymous FTP misconfig [VERIFY]
+    image: fauria/vsftpd
+    environment: [ANONYMOUS_ACCESS=YES]
+    ports: ["127.0.0.1:12121:21"]

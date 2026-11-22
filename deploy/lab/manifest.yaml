@@ -1,0 +1,52 @@
+# Expected-findings manifest for the Phase 0 lab.
+# Coverage = (expected findings detected) / (expected findings). Extra detections are
+# reviewed by hand and classed true-positive or false-positive to compute precision.
+# `kind`: cve | misconfig | exposure | info.  `min_confidence`: the tier we count as a hit.
+# `[VERIFY]` marks expectations not yet confirmed against the running target.
+version: 1
+targets:
+  httpd-2449:
+    address: 127.0.0.1
+    port: 18081
+    expected:
+      # Verified in spike: default httpd:2.4.49 image answers 403 on the traversal path (not exploitable
+      # in this config), so these are version-based only. Tentative is the correct ceiling.
+      - { id: CVE-2021-41773, kind: cve, min_confidence: tentative }
+      - { id: CVE-2021-42013, kind: cve, min_confidence: tentative }
+      - { id: apache-version-disclosure, kind: info, min_confidence: confirmed }
+  redis-noauth:
+    address: 127.0.0.1
+    port: 16379
+    expected:
+      - { id: redis-unauthenticated, kind: misconfig, min_confidence: confirmed }
+  nginx-old:
+    address: 127.0.0.1
+    port: 18082
+    expected:
+      - { id: CVE-2019-20372, kind: cve, min_confidence: tentative }   # verified: in NVD results for f5:nginx:1.16.0
+      - { id: nginx-version-disclosure, kind: info, min_confidence: confirmed }
+  dvwa:
+    address: 127.0.0.1
+    port: 18083
+    expected:
+      - { id: dvwa-default-login, kind: misconfig, min_confidence: confirmed }  # needs --check-default-creds
+      - { id: phpinfo-or-config-exposure, kind: exposure, min_confidence: confirmed }  # [VERIFY]
+  juice-shop:
+    address: 127.0.0.1
+    port: 13000
+    expected:
+      - { id: juice-shop-tech-detect, kind: info, min_confidence: confirmed }
+      - { id: missing-security-headers, kind: misconfig, min_confidence: confirmed }
+  openssh-old:
+    address: 127.0.0.1
+    port: 12222
+    expected:
+      - { id: ssh-weak-algorithms, kind: misconfig, min_confidence: confirmed }  # [VERIFY] depends on image config
+      - { id: openssh-version-cves, kind: cve, min_confidence: tentative }       # CPE→CVE breadth
+  ftp-anon:
+    # Spike finding: this image rejects anonymous login (530) despite ANONYMOUS_ACCESS=YES, so the
+    # original ftp-anonymous-login expectation was wrong and is removed. Needs a working anon-FTP image.
+    address: 127.0.0.1
+    port: 12121
+    expected:
+      - { id: CVE-2021-30047, kind: cve, min_confidence: firm }   # vsftpd 3.0.2, found by Nuclei

@@ -1,0 +1,12 @@
+.DS_Store
+# reproducible third-party data from the NVD/KEV spike
+testdata/spike/nvdbulk/
+testdata/spike/nvd/
+testdata/spike/kev.json
+# local state
+*.db
+*.db-wal
+*.db-shm
+/bin/
+/dist/
+.claude/
