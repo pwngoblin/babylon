@@ -91,3 +91,13 @@ func TestPassWhenEverythingFound(t *testing.T) {
 		t.Fatalf("%s", r.Text())
 	}
 }
+
+func TestRepoManifestIsValid(t *testing.T) {
+	m, err := Load("../../deploy/lab/manifest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Expected) < 20 || len(m.Forbidden) < 2 || m.Thresholds.MinRecall <= 0 || len(m.Scan.Targets) == 0 {
+		t.Fatalf("manifest looks incomplete: %d expected, %d forbidden, %+v", len(m.Expected), len(m.Forbidden), m.Thresholds)
+	}
+}

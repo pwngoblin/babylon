@@ -65,7 +65,7 @@ func ParseAppleIndex(r io.Reader) ([]store.AppleRelease, error) {
 		out = append(out, rel)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("Apple security releases page contained no macOS releases; the page layout may have changed")
+		return nil, fmt.Errorf("the Apple security releases page contained no macOS releases; the page layout may have changed")
 	}
 	return out, nil
 }

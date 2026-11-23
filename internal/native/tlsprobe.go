@@ -74,12 +74,6 @@ func tlsFindings(port int, f TLSFacts, now time.Time) []Finding {
 		return false
 	}
 	if has("TLS 1.0") || has("TLS 1.1") {
-		var old []string
-		for _, v := range []string{"TLS 1.0", "TLS 1.1"} {
-			if has(v) {
-				old = append(old, v)
-			}
-		}
 		mk("Deprecated TLS Protocol Versions Enabled", "medium",
 			"The server still negotiates TLS 1.0 or 1.1.",
 			"TLS 1.0 and 1.1 were deprecated by RFC 8996 and fail PCI DSS. They rely on weak constructions and expose clients to downgrade and decryption attacks.",

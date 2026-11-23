@@ -123,6 +123,7 @@ func TestHostileBannerBytesDoNotBreakParsing(t *testing.T) {
 		t.Fatalf("hostile input must not fail parsing: %v", err)
 	}
 	prod := h.Ports[0].Service.Product
+	//lint:ignore SA1011 the escapes are deliberate: the test feeds control bytes through the sanitizer
 	if !strings.Contains(prod, "A") || strings.ContainsAny(prod, "\x01\xff") {
 		t.Errorf("sanitized product = %q", prod)
 	}

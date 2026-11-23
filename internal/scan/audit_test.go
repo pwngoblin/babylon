@@ -90,10 +90,6 @@ func TestAuditStageEndToEnd(t *testing.T) {
 		case "Local configuration":
 			cfgf = append(cfgf, r)
 		}
-		if r.Confidence == "tentative" && strings.Contains(r.Description, "backported") && r.Family == "Vulnerable software (version match)" && strings.HasPrefix(r.Product, "Apache") {
-			// Apache has no installed package on this host, so its guess must remain.
-			continue
-		}
 	}
 	if len(pkg) != 2 {
 		t.Fatalf("want 2 openssl CVE findings, got %+v", pkg)

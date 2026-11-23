@@ -451,15 +451,6 @@ func WriteCSV(w io.Writer, r *Report) error {
 	return cw.Error()
 }
 
-func rank(s string) int {
-	for i, v := range sevOrder {
-		if v == s {
-			return len(sevOrder) - i
-		}
-	}
-	return 0
-}
-
 // csvSafe prefixes cells that spreadsheets would execute as formulas.
 func csvSafe(s string) string {
 	if s == "" {
