@@ -154,7 +154,7 @@ type Matcher   interface { Applies(Inventory) bool; Match(ctx, Inventory) ([]Raw
 | Debian/Ubuntu | SSH | `dpkg-query`, os-release, kernel | OSV Debian/Ubuntu; source-package match; dpkg ordering |
 | RHEL family | SSH | `rpm -qa --qf`, os-release | OSV Red Hat/Alma/Rocky; RPM EVR ordering |
 | Alpine/containers | SSH / image tar | `apk info -v`; image layers | OSV Alpine; Trivy for images |
-| macOS | SSH | `sw_vers`, `softwareupdate --history`, `brew list --versions` | Brew via OSV; OS version via Apple releases (HTML scraper + fixtures) |
+| macOS | SSH | `sw_vers`, `csrutil`, `spctl`, `fdesetup`, `socketfilterfw`, `defaults read` (software update, login window), `brew list --versions` | OS version via Apple releases (index and article scraper, fixture tests); Homebrew inventoried only (no OSV ecosystem for it) |
 | Windows | WinRM (HTTPS) | allowlisted PowerShell: build+UBR, hotfixes, installed software, Defender/firewall | MSRC CSAF: build/KB supersession; software via CPE matcher |
 
 Rules: exact command/script allowlist; host-key verification; no sudo by default (optional allowlisted sudo per host tag); never compare upstream semver to distro-patched builds (ecosystem-native ordering + advisory `fixed` event are authoritative). Language-ecosystem dependency inspection (lockfiles on host) through osv-scalibr extractors. Hardening packs per OS (SSH daemon, firewall, perms, password policy; SMB signing, RDP NLA, Defender, lockout policy, etc.).
@@ -392,7 +392,7 @@ Raw engine output is on disk; credentials are never stored in the DB.
 
 ## 10. Implementation plan
 
-> Status (2026-11-23): see `docs/roadmap/STATUS.md`. Built: phase 1, Linux credentialed audits, Windows WinRM + MSRC audit (not yet run on a real host), UDP stage, ~30 native checks, active API probes, cvelistV5 feed, KEV watch, timing profiles, scope allow-list, scheduler, `.nessus` export, Linux hardening baseline. Exploit availability tags (Exploit-DB, Metasploit metadata) built. Not built: macOS audit, `.nessus` import. Web-app scanning is out of scope (separate project); remote agents dropped. Also note the credentials section below describes the target design; today credentials come from env vars per scan and are never stored.
+> Status (2026-11-23): see `docs/roadmap/STATUS.md`. Built: phase 1, Linux credentialed audits, Windows WinRM + MSRC audit (not yet run on a real host), UDP stage, ~30 native checks, active API probes, cvelistV5 feed, KEV watch, timing profiles, scope allow-list, scheduler, `.nessus` export, Linux hardening baseline. Exploit availability tags (Exploit-DB, Metasploit metadata) and the macOS audit (Apple releases + MAC rules) built. Not built: Homebrew matching, `.nessus` import. Web-app scanning is out of scope (separate project); remote agents dropped. Also note the credentials section below describes the target design; today credentials come from env vars per scan and are never stored.
 
 **Phase 0: Spike (≈1 week), de-risk coverage**
 - Build a lab (Metasploitable-class, DVWA, several unpatched distro VMs/containers) with an **expected-findings manifest**.

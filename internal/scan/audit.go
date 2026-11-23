@@ -138,10 +138,19 @@ func auditHost(ctx, bg context.Context, st *store.Store, cfg *AuditConfig, scanI
 		return err
 	}
 
+	if facts.Mac != nil {
+		if err := macPatchAudit(bg, st, scanID, assetID, addr, facts); err != nil {
+			return err
+		}
+	}
+
 	// Package vulnerabilities.
 	vulns, mstats, err := audit.MatchPackages(bg, st, facts)
 	if err != nil {
 		return err
+	}
+	if facts.Mac != nil {
+		mstats.Unsupported = "macOS: updates are matched against Apple's security releases; Homebrew packages are inventoried but not matched against an advisory feed"
 	}
 	if mstats.Unsupported != "" {
 		if err := st.RecordCheckRun(bg, scanID, assetID, checkPkgAudit, "skipped", mstats.Unsupported); err != nil {
@@ -170,7 +179,7 @@ func auditHost(ctx, bg context.Context, st *store.Store, cfg *AuditConfig, scanI
 
 	// Hardening rules.
 	var cfgRes []store.ConfigResult
-	for _, r := range audit.Rules {
+	for _, r := range audit.RulesFor(facts) {
 		res := r.Eval(facts)
 		switch res.Status {
 		case audit.Unknown:

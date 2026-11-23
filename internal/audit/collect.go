@@ -15,8 +15,8 @@ const (
 	cmdDpkg      = `dpkg-query -W -f='${Package}\t${Version}\t${Status}\t${Architecture}\t${source:Package}\t${source:Version}\n'`
 	cmdRPM       = `rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n'`
 	cmdAPK       = `apk list -I 2>/dev/null || apk info -v`
-	cmdSwVers    = `sw_vers`
-	cmdBrew      = `brew list --versions`
+	cmdSwVers    = `sw_vers 2>/dev/null`
+	cmdBrew      = `brew list --versions 2>/dev/null`
 	cmdSSHDT     = `sshd -T 2>/dev/null || /usr/sbin/sshd -T 2>/dev/null`
 	cmdSSHDConf  = `cat /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null`
 	cmdUFW       = `ufw status 2>/dev/null`
@@ -59,14 +59,18 @@ func Collect(ctx context.Context, r Runner) (*Facts, error) {
 	}
 	note := func(msg string) { f.Errors = append(f.Errors, msg) }
 
+	kernel := strings.TrimSpace(run(cmdUname))
 	if out := run(cmdOSRelease); out != "" {
 		f.OS = ParseOSRelease(out)
-	} else {
+	} else if !strings.HasPrefix(kernel, "Darwin") {
 		note("could not read /etc/os-release")
 	}
-	f.OS.Kernel = strings.TrimSpace(run(cmdUname))
+	f.OS.Kernel = kernel
 
+	darwin := strings.HasPrefix(f.OS.Kernel, "Darwin")
 	switch {
+	case darwin:
+		// macOS: collected below
 	case f.OS.ID == "debian" || f.OS.ID == "ubuntu" || strings.Contains(f.OS.ID, "mint") || strings.Contains(f.OS.ID, "kali"):
 		f.Packages = ParseDpkg(run(cmdDpkg))
 	case f.OS.ID == "alpine":
@@ -88,14 +92,11 @@ func Collect(ctx context.Context, r Runner) (*Facts, error) {
 			f.Packages = p
 		}
 	}
-	if len(f.Packages) == 0 {
-		if sw := run(cmdSwVers); sw != "" {
-			f.OS.ID, f.OS.Pretty = "macos", "macOS "+field(sw, "ProductVersion")
-			f.OS.VersionID = field(sw, "ProductVersion")
-		}
+	if darwin || (len(f.Packages) == 0 && strings.TrimSpace(run(cmdSwVers)) != "") {
+		collectMac(f, run)
 		f.Packages = append(f.Packages, parseBrew(run(cmdBrew))...)
 	}
-	if len(f.Packages) == 0 {
+	if len(f.Packages) == 0 && f.Mac == nil {
 		note("no installed packages could be listed")
 	}
 	SortPackages(f.Packages)

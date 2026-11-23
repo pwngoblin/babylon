@@ -19,7 +19,7 @@ import (
 	"babylon/internal/store"
 )
 
-var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv", "msrc", "exploitdb", "metasploit"}
+var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv", "msrc", "exploitdb", "metasploit", "apple"}
 
 type feedsOptions struct {
 	home         string
@@ -30,6 +30,7 @@ type feedsOptions struct {
 	nvdPages     int
 	cveYear      int
 	msrcMonths   int
+	appleMonths  int
 	status       bool
 }
 
@@ -47,6 +48,7 @@ func newFeedsCmd() *cobra.Command {
   cvelist           CVE Program records: version ranges for CVEs NVD has not analysed yet
   osv               OSV.dev ecosystem dumps (Debian, Ubuntu, Alpine, Rocky, Alma, PyPI, npm, Go)
   msrc              Microsoft security bulletins: Windows fix revisions (powers the Windows patch audit)
+  apple             Apple macOS security releases: CVEs fixed per release (powers the macOS patch audit)
   exploitdb         Exploit-DB index: which CVEs have a public exploit (metadata only, no code)
   metasploit        Metasploit module index: which CVEs have a module (metadata only, no code)
 
@@ -69,6 +71,7 @@ Use --no-download with --templates-dir to index an existing Nuclei checkout offl
 	f.IntVar(&o.nvdPages, "nvd-pages", 0, "stop the NVD download after this many pages of 2000 (seed a partial index; rerun to continue)")
 	f.IntVar(&o.cveYear, "cvelist-from-year", 2024, "cvelistV5: import records from this CVE year onward")
 	f.IntVar(&o.msrcMonths, "msrc-months", 12, "msrc: how many recent monthly bulletins to download (each is about 30 MB)")
+	f.IntVar(&o.appleMonths, "apple-months", 24, "apple: how many months of macOS releases to read (one small page per release)")
 	f.BoolVar(&o.status, "status", false, "show what is indexed and how old it is, then exit")
 	return cmd
 }
@@ -171,6 +174,14 @@ func runFeeds(ctx context.Context, out io.Writer, o feedsOptions) error {
 				} else {
 					fmt.Fprintln(out, "  cvelist: already up to date")
 				}
+			}
+			return err
+		})
+		run("apple", func() error {
+			fmt.Fprintf(out, "Apple macOS security releases (last %d months) ...\n", o.appleMonths)
+			n, err := intel.SyncApple(ctx, fetch, st, "", o.appleMonths, func(f string, a ...any) { fmt.Fprintf(out, f+"\n", a...) })
+			if err == nil {
+				fmt.Fprintf(out, "  apple: %d CVE fixes added\n", n)
 			}
 			return err
 		})

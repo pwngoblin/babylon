@@ -48,6 +48,7 @@ var upgradeCmd = regexp.MustCompile(`Command: (.+)$`)
 
 const familyPackage = "Outdated package"
 const familyWinPatch = "Missing patch (Windows)"
+const familyMacPatch = "Missing patch (macOS)"
 
 var kbRe = regexp.MustCompile(`KB(\d+)`)
 
@@ -99,7 +100,7 @@ func build(k key, m []store.FindingRow) Group {
 	g := Group{Address: k.addr, Port: k.port, Proto: k.proto, Product: k.product, Version: k.version, Members: m, Confidence: model.ConfConfirmed}
 	cves := map[string]bool{}
 	fixed, fixedCmd := "", ""
-	pkgs, win := true, true
+	pkgs, win, mac := true, true, true
 	fixedKB := ""
 	for _, r := range m {
 		if r.Family != familyPackage {
@@ -107,6 +108,9 @@ func build(k key, m []store.FindingRow) Group {
 		}
 		if r.Family != familyWinPatch {
 			win = false
+		}
+		if r.Family != familyMacPatch {
+			mac = false
 		}
 		if model.SeverityRank(r.Severity) > model.SeverityRank(g.Severity) {
 			g.Severity = r.Severity
@@ -164,6 +168,9 @@ func build(k key, m []store.FindingRow) Group {
 	if win && fixed != "" {
 		g.Title = fmt.Sprintf("Missing Windows updates: %s (%s -> %s)", k.product, k.version, fixed)
 		g.Fix = fmt.Sprintf("Install the latest cumulative update (KB%s) so the host reaches build %s or later; this resolves %d CVE(s)%s.", fixedKB, fixed, len(g.CVEs), kev)
+	} else if mac && fixed != "" {
+		g.Title = fmt.Sprintf("Missing macOS updates: %s (%s -> %s)", k.product, k.version, fixed)
+		g.Fix = fmt.Sprintf("Update macOS to %s or later (Software Update, `softwareupdate -i -a`, or your MDM); this resolves %d CVE(s)%s.", fixed, len(g.CVEs), kev)
 	} else if pkgs && fixed != "" {
 		g.Title = fmt.Sprintf("Outdated package: %s (%s -> %s)", k.product, k.version, fixed)
 		g.Fix = fmt.Sprintf("Upgrade %s to %s or later; this resolves %d CVE(s)%s.", k.product, fixed, len(g.CVEs), kev)

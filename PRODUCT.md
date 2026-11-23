@@ -70,7 +70,7 @@ Always denied: DoS, destructive, intrusive NSE/Nuclei categories. Default-creden
 
 ## 7. Scope by phase
 
-> Status (2026-11-23): Phase 1, the Linux and Windows credentialed audits, scheduler, UI and `.nessus` export are built (v0.1.0 plus later commits). Windows audit is not yet run against a real host; macOS audit is not built. Next steps are in `docs/roadmap/ROADMAP.md`.
+> Status (2026-11-23): Phase 1, the Linux and Windows credentialed audits, scheduler, UI and `.nessus` export are built (v0.1.0 plus later commits). Windows audit is not yet run against a real host; the macOS audit is built (Homebrew matching is not). Next steps are in `docs/roadmap/ROADMAP.md`.
 
 - **Phase 0 (spike)**: lab + expected-findings manifest; measure coverage and CPE false-positive rate per source; go/no-go per source.
 - **Phase 1 (MVP)**: policy/safety, scalable orchestrator, Nmap + Nuclei + native checks + CPE→CVE, feeds, correlation/dedupe, **HTML/MD/JSON reports with exec summary + branding**.

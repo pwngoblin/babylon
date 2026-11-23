@@ -23,7 +23,8 @@ Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/r
 | Scheduler (`babylon serve` + Schedules page) | done |
 | `.nessus` export | done (import not built) |
 | Exploit availability tags (Exploit-DB, Metasploit metadata; `update-feeds --only exploitdb,metasploit`) | done; unit-tested; live feeds download and parse (33,568 Exploit-DB + 2,733 Metasploit CVE links) |
-| macOS advisories, triage, asset inventory | not built (see ROADMAP.md) |
+| macOS credentialed audit (patch level from Apple releases, end-of-support, 9 MAC rules) | done; settings parse checked against a real Mac, patch matching against the live Apple feed; not yet run over SSH against a Mac |
+| Homebrew vulnerability matching, triage, asset inventory | not built (see ROADMAP.md) |
 | Web-app scanning (DAST) | out of scope, separate project |
 
 ## Added after the M01-M04 work (2026-11-23)
@@ -58,6 +59,9 @@ Feeds `exploitdb` (files_exploits.csv) and `metasploit` (modules_metadata_base.j
 
 ## Protocol probes (2026-11-23)
 New in `internal/native/proto.go`, all read-only and `--allow-active`, mock-tested only: LDAP anonymous bind plus a one-entry base read of the first naming context (`ldap-anonymous`), TFTP read request for a nonexistent file (`tftp-open`), NTP mode 6 READVAR (`ntp-mode6`), IPMI 2.0 Open Session with cipher suite 3 (hash disclosure, CVE-2013-4786) and cipher suite 0 (`ipmi-cipher-zero`; no authentication exchange follows), Erlang EPMD names request (`epmd-exposed`). UDP probes run directly (no root needed). Not built: SMB null sessions, IKE aggressive mode, RabbitMQ.
+
+## macOS audit (2026-11-23)
+Feed `apple` (`update-feeds --only apple`, `--apple-months` default 24): reads Apple's security releases index and one article per macOS release, stores CVEs fixed per release (`macos_release`, `macos_fix`, migration 9; the older unused `apple_release` table from 0001 was left alone). Live: 5 major lines, 3,700+ fixes. The credentialed SSH audit now detects Macs (`uname` Darwin), collects `sw_vers` plus read-only security settings (SIP, Gatekeeper, FileVault, application firewall and stealth mode, software update and login window defaults; all allowlisted, tested read-only), then: (1) every CVE fixed by a newer release in the host's major line becomes a confirmed `Missing patch (macOS)` finding grouped as "Missing macOS updates: macOS Tahoe (26.6 -> 26.7.3)"; (2) a line with no Apple release for 12 months gets an `Unsupported software` finding; (3) rules MAC-001..009 plus the SSH rules (Linux-only rules are not run on a Mac). Missing Apple data is a visible skip. Limits: a host older than the downloaded window gets a partial list; Homebrew packages are inventoried only (not matched); `sshd -T` and some settings may need a privileged account (reported as unknown).
 
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.

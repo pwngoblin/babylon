@@ -212,7 +212,8 @@ func TestAllowlistIsReadOnly(t *testing.T) {
 	// Every command segment must start with a known read-only binary.
 	safe := map[string]bool{"cat": true, "uname": true, "dpkg-query": true, "rpm": true, "apk": true, "sw_vers": true,
 		"brew": true, "sshd": true, "/usr/sbin/sshd": true, "ufw": true, "firewall-cmd": true, "iptables": true,
-		"nft": true, "ss": true, "netstat": true, "stat": true, "sysctl": true, "systemctl": true}
+		"nft": true, "ss": true, "netstat": true, "stat": true, "sysctl": true, "systemctl": true,
+		"csrutil": true, "spctl": true, "fdesetup": true, "defaults": true, "/usr/libexec/ApplicationFirewall/socketfilterfw": true}
 	for _, c := range AllowedCommands() {
 		if c == cmdDocker {
 			continue // the one command with a pipe; checked by TestDockerCommandIsAllowlistedAndReadOnly
@@ -227,7 +228,9 @@ func TestAllowlistIsReadOnly(t *testing.T) {
 			}
 		}
 		// Subcommands that change state.
-		for _, bad := range []string{"sysctl -w", "brew install", "apk add", "apk del", "rpm -i", "rpm -e", "rpm -U"} {
+		for _, bad := range []string{"sysctl -w", "brew install", "apk add", "apk del", "rpm -i", "rpm -e", "rpm -U",
+			"defaults write", "defaults delete", "defaults import", "csrutil enable", "csrutil disable", "csrutil clear",
+			"spctl --master", "spctl --add", "spctl --remove", "--setglobalstate", "--setstealthmode", "--add", "--remove", "fdesetup enable", "fdesetup disable"} {
 			if strings.Contains(c, bad) {
 				t.Errorf("command %q contains state-changing %q", c, bad)
 			}
