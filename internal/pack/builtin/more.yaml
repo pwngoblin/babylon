@@ -1,0 +1,239 @@
+schema: 1
+checks:
+  - id: BBL-HTTP-0023
+    name: OpenSearch API exposed without authentication
+    family: Databases
+    severity: high
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [9200] }
+    steps:
+      - http: { path: / }
+        expect: { status: 200, body: '"distribution"\s*:\s*"opensearch"' }
+    finding:
+      title: Unauthenticated OpenSearch exposed
+      synopsis: OpenSearch answers API requests without credentials.
+      description: Anyone on the network can read, change or delete indexed data.
+      remediation: Enable the security plugin, require authentication and TLS, and bind to a private interface.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: open, want: finding, responses: [{ status: 200, body: '{"name":"n1","version":{"distribution":"opensearch","number":"2.11.0"}}' }] }
+      - { name: elasticsearch, want: none, responses: [{ status: 200, body: '{"version":{"number":"8.1.0"},"tagline":"You Know, for Search"}' }] }
+
+  - id: BBL-HTTP-0024
+    name: Kubernetes API server insecure port exposed
+    family: Containers
+    severity: critical
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt, http-proxy], ports: [8080, 8001] }
+    steps:
+      - http: { path: /api }
+        expect: { status: 200, body: '"serverAddressByClientCIDRs"' }
+    finding:
+      title: Kubernetes API served without authentication on a plain HTTP port
+      synopsis: The cluster API is open to anyone who can connect.
+      description: The insecure port skips authentication and authorization entirely, so a visitor controls the cluster.
+      remediation: Remove --insecure-port (it was removed in Kubernetes 1.24) and any kubectl proxy bound to a network address.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: open, want: finding, responses: [{ status: 200, body: '{"kind":"APIVersions","versions":["v1"],"serverAddressByClientCIDRs":[{"clientCIDR":"0.0.0.0/0"}]}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0025
+    name: Grafana allows anonymous access
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [3000] }
+    steps:
+      - http: { path: /api/search }
+        expect: { status: 200, body: '^\[' }
+    finding:
+      title: Grafana lists dashboards without login
+      synopsis: Anonymous visitors can browse dashboards.
+      description: With anonymous access enabled, dashboards, data source names and metrics are readable by anyone, and a permissive anonymous role can change them.
+      remediation: Set auth.anonymous enabled = false, or give the anonymous role no rights beyond Viewer on public dashboards only.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:AC-14"]
+    tests:
+      - { name: anonymous, want: finding, responses: [{ status: 200, body: '[{"id":1,"title":"Node metrics","type":"dash-db"}]' }] }
+      - { name: login, want: none, responses: [{ status: 401, body: '{"message":"Unauthorized"}' }] }
+
+  - id: BBL-HTTP-0026
+    name: ActiveMQ web console reachable
+    family: Web Servers
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8161] }
+    steps:
+      - http: { path: /admin/ }
+        expect: { status: 401, header: { WWW-Authenticate: '(?i)ActiveMQ' } }
+    finding:
+      title: ActiveMQ administration console is reachable from the network
+      synopsis: The broker's management interface is exposed.
+      description: The console is protected only by a password, and default credentials (admin/admin) are common. It has also been the entry point of several remote-code-execution flaws.
+      remediation: Restrict port 8161 to administrators, change the default credentials, and keep ActiveMQ patched.
+    controls: ["NIST-800-53:AC-17", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 401, header: { WWW-Authenticate: 'basic realm="ActiveMQRealm"' }, body: '' }] }
+      - { name: other, want: none, responses: [{ status: 401, header: { WWW-Authenticate: 'Basic realm="router"' }, body: '' }] }
+
+  - id: BBL-HTTP-0027
+    name: CUPS web interface reachable
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, ipp, http-alt], ports: [631] }
+    steps:
+      - http: { path: / }
+        expect: { status: 200, body: '(?i)<title>[^<]*CUPS' }
+    finding:
+      title: CUPS print server interface is reachable from the network
+      synopsis: The printing service is exposed beyond the machine.
+      description: A network-reachable CUPS service has been the target of several remote-code-execution vulnerabilities, and exposes printer and user information.
+      remediation: Bind cupsd to localhost (Listen localhost:631) unless remote printing is needed, and firewall 631 and UDP 631.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: cups, want: finding, responses: [{ status: 200, body: '<html><head><title>Home - CUPS 2.4.7</title></head>' }] }
+      - { name: other, want: none, responses: [{ status: 200, body: '<title>Printer</title>' }] }
+
+  - id: BBL-HTTP-0028
+    name: Netdata dashboard exposed
+    family: Misc.
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [19999] }
+    steps:
+      - http: { path: /api/v1/info }
+        expect: { status: 200, body: '"version"\s*:\s*"(?P<ver>[^"]+)".*"uid"' }
+    finding:
+      title: Netdata ${ver} dashboard is readable without authentication
+      synopsis: Detailed host metrics and configuration are exposed.
+      description: The Netdata API shows running processes, network connections, kernel and hardware details, which help an attacker plan further steps.
+      remediation: Bind Netdata to localhost or a monitoring network, or put it behind an authenticating proxy.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"version":"v1.44.0","uid":"abc-123","mirrored_hosts":["web1"]}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0029
+    name: Prometheus Alertmanager exposed
+    family: Misc.
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [9093] }
+    steps:
+      - http: { path: /api/v2/status }
+        expect: { status: 200, body: '"cluster"' }
+    finding:
+      title: Alertmanager API is reachable without authentication
+      synopsis: Alerts can be read and silenced by anyone who can connect.
+      description: With no authentication anyone can silence alerts, hiding an attack from the operators, and can read alert labels that describe the infrastructure.
+      remediation: Restrict Alertmanager to the monitoring network or put it behind an authenticating reverse proxy.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"cluster":{"status":"ready"},"versionInfo":{"version":"0.27.0"}}' }] }
+      - { name: other, want: none, responses: [{ status: 200, body: '{"ok":true}' }] }
+
+  - id: BBL-TCP-0013
+    name: Tomcat AJP connector exposed
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: tcp
+    when: { services: [ajp13], ports: [8009] }
+    steps:
+      - { send_hex: "12 34 00 01 0a", read: 64, expect: { body: '^AB\x00\x01\x09' } }
+    finding:
+      title: AJP connector answers on the network
+      synopsis: The Apache JServ Protocol port is reachable.
+      description: The server answered an AJP ping. An AJP connector exposed to untrusted networks is the precondition for Ghostcat (CVE-2020-1938), which lets attackers read web application files and, in some setups, run code. This check shows exposure, not that the Tomcat version is vulnerable.
+      remediation: Bind the AJP connector to localhost, or disable it if no front-end proxy needs it. Where it is needed, set a secret (secretRequired) and upgrade Tomcat to 9.0.31, 8.5.51 or 7.0.100 or later.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-7"]
+    confidence: firm
+    tests:
+      - { name: ajp, want: finding, responses: [{ data: "AB\x00\x01\x09" }] }
+      - { name: other, want: none, responses: [{ data: "HTTP/1.1 400 Bad Request\r\n" }] }
+
+  - id: BBL-UDP-0004
+    name: Memcached answers on UDP
+    family: Service detection
+    severity: medium
+    kind: probe
+    transport: udp
+    when: { services: [memcache, memcached], ports: [11211] }
+    steps:
+      - { send_hex: "0000 0000 0001 0000 7374617473 0d0a", read: 4096, expect: { body: 'STAT pid' } }
+    finding:
+      title: Memcached accepts UDP requests
+      synopsis: The cache answers anyone, and is usable for traffic amplification.
+      description: A 15-byte "stats" request returned a larger reply from memcached over UDP. Exposed memcached UDP has been abused for record-breaking amplification attacks, and the cache contents are readable by anyone.
+      remediation: Disable UDP (-U 0), bind memcached to localhost or a private interface, and firewall 11211.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-5"]
+    tests:
+      - { name: open, want: finding, responses: [{ data: "\x00\x00\x00\x00\x00\x01\x00\x00STAT pid 1\r\nSTAT uptime 100\r\nEND\r\n" }] }
+      - { name: other, want: none, responses: [{ data: "ERROR\r\n" }] }
+
+  - id: BBL-UDP-0005
+    name: Ubiquiti discovery service exposed
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: udp
+    when: { ports: [10001] }
+    steps:
+      - { send_hex: "01 00 00 00", read: 2048, expect: { body: '^\x01\x00' } }
+    finding:
+      title: Ubiquiti device discovery answers on the network
+      synopsis: A device announces its model, firmware and addresses.
+      description: The discovery service replies with hardware address, model and firmware version. It has been abused for amplification and helps attackers pick exploits.
+      remediation: Block 10001/udp from untrusted networks and disable discovery on the device where possible.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: device, want: finding, responses: [{ data: "\x01\x00\x00\x2a\x01\x00\x06\x00\x11\x22\x33\x44\x55\x66" }] }
+      - { name: other, want: none, responses: [{ data: "no" }] }
+
+  - id: BBL-UDP-0006
+    name: WS-Discovery responder reachable
+    family: Service detection
+    severity: medium
+    kind: probe
+    transport: udp
+    when: { services: [wsdd, ws-discovery], ports: [3702] }
+    steps:
+      - send: '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</wsa:Action><wsa:MessageID>urn:uuid:00000000-0000-4000-8000-000000000001</wsa:MessageID></soap:Header><soap:Body><wsd:Probe/></soap:Body></soap:Envelope>'
+        read: 8192
+        expect: { body: 'ProbeMatches' }
+    finding:
+      title: WS-Discovery answers unicast probes
+      synopsis: Cameras, printers and PCs announce themselves to anyone who asks.
+      description: WS-Discovery (3702/udp) has been abused for amplification attacks of up to 500 times the request size, and its replies list device types and service endpoints.
+      remediation: Block 3702/udp from untrusted networks and disable WSD on devices that do not need it.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-5"]
+    tests:
+      - { name: responder, want: finding, responses: [{ data: '<?xml version="1.0"?><s:Envelope><s:Body><d:ProbeMatches><d:ProbeMatch><d:Types>wsdp:Device</d:Types></d:ProbeMatch></d:ProbeMatches></s:Body></s:Envelope>' }] }
+      - { name: other, want: none, responses: [{ data: 'fault' }] }
+
+  - id: BBL-UDP-0007
+    name: RPC portmapper reachable over UDP
+    family: RPC
+    severity: medium
+    kind: probe
+    transport: udp
+    when: { services: [rpcbind, sunrpc], ports: [111] }
+    steps:
+      - { send_hex: "00000001 00000000 00000002 000186a0 00000002 00000000 00000000 00000000 00000000 00000000", read: 512, expect: { body: '^\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00' } }
+    finding:
+      title: rpcbind answers RPC calls from the network
+      synopsis: The portmapper lists which RPC services (NFS, mountd and others) run on the host.
+      description: An accepted RPC null call to program 100000 shows rpcbind is reachable. It lets an attacker map NFS and other RPC services and is abused for UDP amplification.
+      remediation: Restrict 111/tcp and 111/udp with a firewall or tcp_wrappers, bind rpcbind to localhost if NFS is not used, and disable rpcbind otherwise.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-7"]
+    tests:
+      - { name: rpcbind, want: finding, responses: [{ data: "\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" }] }
+      - { name: other, want: none, responses: [{ data: "garbage" }] }

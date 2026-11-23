@@ -6,7 +6,7 @@ Rule for every item: non-destructive by default, opt-in flags for anything intru
 
 ## Next
 
-1. **Grow the check packs to 100+ checks** (plan track T1; 42 pack checks and 46 Go checks exist). Infrastructure services only; each with fixtures.
+1. **Keep growing the check packs** (101 checks: 47 Go, 54 pack; the first 100 target is met). Infrastructure services only; each with fixtures. Real-software verification of the pack checks is the bigger gap than count.
 2. **Active Directory.** True anonymous (null) SMB sessions (the SMB library only supports guest logins), LDAP signing and AD hardening need credentials. (SMB guest access and share listing are built.)
 3. **More integrations.** Email, SARIF export, Jira/GitHub issues; `.nessus` import (export and webhook are built).
 4. **Credentialed breadth** (plan track T4): collect device configs over SSH, Juniper/Fortinet/Palo Alto rule sets (a Cisco IOS file audit is built), per-engine database credentials, SQL Server/Oracle/MongoDB. (PostgreSQL and MySQL/MariaDB audits are built.)

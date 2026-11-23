@@ -55,7 +55,7 @@ Already agreed; moved up because inventory is needed by the home-network and cha
 
 | Track | State |
 |---|---|
-| T1 check packs | engine, `babylon checks`, 42 pack checks built; target 60+ pack checks (100+ total) not reached: 88 total |
+| T1 check packs | engine, `babylon checks`, 54 pack checks built; 101 checks in total (target 100+ met; the 60+ pack-check target is not) |
 | T2 compliance | built: NIST 800-53, PCI DSS 4.0, ISO 27001 per-control report; every check mapped |
 | T6 operations | built: triage with expiry, asset criticality and fragile flag, trends, webhook notifications; web UI pages built; email not built |
 | T4 credentialed breadth | PostgreSQL and MySQL/MariaDB audits built and verified on real servers; Cisco IOS config-file audit built (sample configs only); SSH collection and other vendors not built |
