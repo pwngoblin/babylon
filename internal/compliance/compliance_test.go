@@ -10,6 +10,7 @@ import (
 	"babylon/internal/dbaudit"
 	"babylon/internal/model"
 	"babylon/internal/native"
+	"babylon/internal/netaudit"
 	"babylon/internal/store"
 )
 
@@ -24,6 +25,9 @@ func TestEveryMappedCheckExists(t *testing.T) {
 		known[r.ID] = true
 	}
 	for _, r := range audit.MacRules {
+		known[r.ID] = true
+	}
+	for _, r := range netaudit.IOSRules {
 		known[r.ID] = true
 	}
 	for _, r := range dbaudit.Rules {

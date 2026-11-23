@@ -63,6 +63,12 @@ export DBPW='the-password'
 
 The audit refuses to send the password without TLS unless you add `--db-allow-plaintext`.
 
+Audit a **network device's saved config** (Cisco IOS/IOS-XE) without touching the device:
+
+```
+./babylon config-audit running-config.txt --host core-sw1
+```
+
 Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus` file. Schedules: pick "Repeat" when you start a scan in the web UI.
 
 ## What it does

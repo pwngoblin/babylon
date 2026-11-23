@@ -95,6 +95,10 @@ var builtin = map[string][]string{
 	"PG-001": {"SC-8"}, "PG-002": {"IA-5"}, "PG-003": {"IA-2", "AC-3"}, "PG-004": {"SC-7", "AC-3"}, "PG-005": {"AC-6"},
 	"PG-006": {"AU-2"}, "PG-007": {"IA-5"}, "PG-008": {"IA-2"},
 	"MY-001": {"SC-8"}, "MY-002": {"AC-2"}, "MY-003": {"IA-5"}, "MY-004": {"AC-6"}, "MY-005": {"CM-7"}, "MY-006": {"CM-7"}, "MY-007": {"CM-6"},
+	// network devices (Cisco IOS)
+	"IOS-001": {"SC-8", "CM-7"}, "IOS-002": {"IA-5"}, "IOS-003": {"IA-5"}, "IOS-004": {"IA-5", "AC-3"}, "IOS-005": {"SC-8", "CM-7"},
+	"IOS-006": {"SC-8", "SC-13"}, "IOS-007": {"AC-17", "AC-12"}, "IOS-008": {"IA-2", "AC-2"}, "IOS-009": {"AU-2"}, "IOS-010": {"AU-8"},
+	"IOS-011": {"CM-7"}, "IOS-012": {"CM-7"}, "IOS-013": {"AC-8"},
 	// macOS
 	"MAC-001": {"CM-6", "SI-7"}, "MAC-002": {"CM-11"}, "MAC-003": {"SC-28"}, "MAC-004": {"SC-7"}, "MAC-005": {"SC-7"},
 	"MAC-006": {"SI-2"}, "MAC-007": {"SI-2"}, "MAC-008": {"AC-2"}, "MAC-009": {"AC-2", "IA-2"},
@@ -164,7 +168,7 @@ func CheckForFinding(engine, ref string) string {
 
 var titles = map[string]string{
 	"NIST-800-53:AC-2": "Account Management", "NIST-800-53:AC-3": "Access Enforcement", "NIST-800-53:AC-6": "Least Privilege",
-	"NIST-800-53:AC-7": "Unsuccessful Logon Attempts", "NIST-800-53:AC-12": "Session Termination", "NIST-800-53:AC-14": "Permitted Actions Without Identification or Authentication",
+	"NIST-800-53:AC-7": "Unsuccessful Logon Attempts", "NIST-800-53:AC-12": "Session Termination", "NIST-800-53:AC-8": "System Use Notification", "NIST-800-53:AC-14": "Permitted Actions Without Identification or Authentication",
 	"NIST-800-53:AC-17": "Remote Access", "NIST-800-53:AU-2": "Event Logging", "NIST-800-53:AU-8": "Time Stamps",
 	"NIST-800-53:AU-12": "Audit Record Generation", "NIST-800-53:CM-6": "Configuration Settings", "NIST-800-53:CM-7": "Least Functionality",
 	"NIST-800-53:CM-11": "User-Installed Software", "NIST-800-53:IA-2": "Identification and Authentication (Users)",

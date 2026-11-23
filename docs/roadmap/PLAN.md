@@ -58,7 +58,7 @@ Already agreed; moved up because inventory is needed by the home-network and cha
 | T1 check packs | engine, `babylon checks`, 42 pack checks built; target 60+ pack checks (100+ total) not reached: 88 total |
 | T2 compliance | built: NIST 800-53, PCI DSS 4.0, ISO 27001 per-control report; every check mapped |
 | T6 operations | built: triage with expiry, asset criticality and fragile flag, trends, webhook notifications; web UI pages and email not built |
-| T4 credentialed breadth | PostgreSQL and MySQL/MariaDB audits built and verified on real servers; network-device audits not built |
+| T4 credentialed breadth | PostgreSQL and MySQL/MariaDB audits built and verified on real servers; Cisco IOS config-file audit built (sample configs only); SSH collection and other vendors not built |
 | T3 vendor advisories (CSAF) | not started |
 | T5 proof and scale | synthetic 5,000-host store/report test passes (two slow queries fixed); real-host matrix and engine-level scale not done |
 
