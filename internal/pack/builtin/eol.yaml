@@ -1,0 +1,100 @@
+schema: 1
+checks:
+  - id: BBL-EOL-0001
+    name: Apache HTTP Server 1.x or 2.0/2.2 is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [http, https, http-alt] }
+    match:
+      - { field: product, regex: '^Apache httpd$' }
+      - { field: version, regex: '^(1\.\d|2\.[02]\.)' }
+    finding:
+      title: Unsupported Apache HTTP Server ${version}
+      synopsis: This Apache branch no longer receives security fixes.
+      description: Apache 2.2 reached end of life in December 2017 and 2.0 and 1.x earlier. Known vulnerabilities in these branches will never be patched.
+      remediation: Upgrade to a supported Apache 2.4 release.
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: apache-2.2, want: finding, service: { name: http, product: Apache httpd, version: 2.2.34 } }
+      - { name: apache-2.4, want: none, service: { name: http, product: Apache httpd, version: 2.4.58 } }
+
+  - id: BBL-EOL-0002
+    name: Microsoft IIS 8.5 or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [http, https, http-alt] }
+    match:
+      - { field: product, regex: '^Microsoft IIS httpd$' }
+      - { field: version, regex: '^[5-8]\.\d' }
+    finding:
+      title: Unsupported Microsoft IIS ${version}
+      synopsis: This IIS version belongs to a Windows Server release that is out of support.
+      description: IIS 8.5 and earlier ship with Windows Server 2012 R2 and older, which no longer receive security updates.
+      remediation: Move the site to a supported Windows Server release (IIS 10).
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: iis-7.5, want: finding, service: { name: http, product: Microsoft IIS httpd, version: '7.5' } }
+      - { name: iis-10, want: none, service: { name: http, product: Microsoft IIS httpd, version: '10.0' } }
+
+  - id: BBL-EOL-0003
+    name: Apache Tomcat 8.5 or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [http, https, http-alt, ajp13] }
+    match:
+      - { field: product, regex: '^Apache Tomcat' }
+      - { field: version, regex: '^([3-7]\.\d|8\.[05]\.)' }
+    finding:
+      title: Unsupported Apache Tomcat ${version}
+      synopsis: This Tomcat branch no longer receives security fixes.
+      description: Tomcat 8.5 reached end of life on 31 March 2024, and 8.0 and earlier before that.
+      remediation: Upgrade to a supported Tomcat release (9.0, 10.1 or 11.0).
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: tomcat-8.5, want: finding, service: { name: http, product: Apache Tomcat, version: 8.5.99 } }
+      - { name: coyote, want: none, service: { name: http, product: Apache Tomcat/Coyote JSP engine, version: '1.1' } }
+      - { name: tomcat-10, want: none, service: { name: http, product: Apache Tomcat, version: 10.1.20 } }
+
+  - id: BBL-EOL-0004
+    name: PostgreSQL 13 or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [postgresql], ports: [5432] }
+    match:
+      - { field: product, regex: '^PostgreSQL' }
+      - { field: version, regex: '^(\d|1[0-3])\.\d' }
+      - { field: version, regex: '(?i)or later|\s-\s|\bto\b', not: true }
+    finding:
+      title: Unsupported PostgreSQL ${version}
+      synopsis: This PostgreSQL major version no longer receives security fixes.
+      description: PostgreSQL supports each major version for five years. Version 13 reached end of life in November 2025.
+      remediation: Upgrade to a supported major version.
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: pg-9.6, want: finding, service: { name: postgresql, product: PostgreSQL DB, version: 9.6.24 } }
+      - { name: pg-16, want: none, service: { name: postgresql, product: PostgreSQL DB, version: 16.2 } }
+      - { name: range, want: none, service: { name: postgresql, product: PostgreSQL DB, version: 9.6.0 or later } }
+
+  - id: BBL-EOL-0005
+    name: vsftpd 2.3.4 backdoored release
+    family: Backdoors
+    severity: critical
+    kind: passive
+    when: { services: [ftp], ports: [21] }
+    match:
+      - { field: product, regex: '^vsftpd$' }
+      - { field: version, regex: '^2\.3\.4$' }
+    finding:
+      title: vsftpd 2.3.4 contains a known backdoor
+      synopsis: The reported version is the one that shipped with a remote backdoor.
+      description: In July 2011 the vsftpd 2.3.4 download was replaced with a copy that opens a root shell on port 6200 when a username ending in ":)" is sent. The version string alone cannot prove the binary is the tampered build, so verify the package source.
+      remediation: Replace vsftpd with a build from a trusted package source (2.3.5 or later) and investigate the host for compromise.
+      cves: [CVE-2011-2523]
+    controls: ["NIST-800-53:SI-7", "NIST-800-53:SA-12"]
+    tests:
+      - { name: backdoored, want: finding, service: { name: ftp, product: vsftpd, version: 2.3.4 } }
+      - { name: fixed, want: none, service: { name: ftp, product: vsftpd, version: 3.0.5 } }

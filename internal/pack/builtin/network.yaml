@@ -1,0 +1,177 @@
+schema: 1
+checks:
+  - id: BBL-TCP-0001
+    name: SSH protocol version 1 supported
+    family: Misc.
+    severity: high
+    kind: probe
+    transport: tcp
+    when: { services: [ssh], ports: [22] }
+    steps:
+      - { read: 128, expect: { body: '^SSH-1\.(?P<proto>\d+)-' } }
+    finding:
+      title: SSH server accepts protocol version 1
+      synopsis: The SSH server advertises protocol 1.${proto}, which is cryptographically broken.
+      description: SSH protocol 1 has known design flaws that allow session hijacking and man-in-the-middle attacks. Version string 1.99 means the server still accepts protocol 1 clients.
+      remediation: Set "Protocol 2" in sshd_config (or upgrade to OpenSSH 7.4 or later, which removed protocol 1).
+    controls: ["NIST-800-53:SC-8", "NIST-800-53:SC-13"]
+    tests:
+      - { name: v1-compat, want: finding, responses: [{ data: "SSH-1.99-OpenSSH_3.9p1\n" }] }
+      - { name: v2, want: none, responses: [{ data: "SSH-2.0-OpenSSH_9.6\r\n" }] }
+
+  - id: BBL-TCP-0002
+    name: SMTP VRFY command enabled
+    family: SMTP problems
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [smtp, smtps, submission], ports: [25, 587] }
+    steps:
+      - { read: 512, expect: { body: '^220' } }
+      - { send: "VRFY root\r\n", read: 512, expect: { body: '^25[012][ -]' } }
+    finding:
+      title: SMTP server answers VRFY requests
+      synopsis: Mail account names can be confirmed remotely.
+      description: VRFY lets a remote party test whether a local user exists, which helps with user enumeration and phishing.
+      remediation: Disable VRFY and EXPN (Postfix - disable_vrfy_command = yes; Exim - no_verify).
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: vrfy-on, want: finding, responses: [{ data: "220 mail.example ESMTP Postfix\r\n" }, { data: "252 2.0.0 root\r\n" }] }
+      - { name: vrfy-off, want: none, responses: [{ data: "220 mail.example ESMTP Postfix\r\n" }, { data: "502 5.5.1 VRFY command is disabled\r\n" }] }
+
+  - id: BBL-TCP-0003
+    name: Chargen service enabled (TCP)
+    family: Service detection
+    severity: medium
+    kind: probe
+    transport: tcp
+    when: { services: [chargen], ports: [19] }
+    steps:
+      - { read: 256, expect: { body: '!"#\$%&''\(\)\*\+,-\./0123456789' } }
+    finding:
+      title: Character generator (chargen) service is running
+      synopsis: A legacy test service that is abused for traffic amplification is enabled.
+      description: chargen answers any connection with a stream of characters. It has no legitimate use today and is used in reflection and denial-of-service attacks.
+      remediation: Disable chargen in inetd/xinetd and block port 19 at the firewall.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: chargen, want: finding, responses: [{ data: "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefgh\r\n" }] }
+      - { name: other, want: none, responses: [{ data: "hello\r\n" }] }
+
+  - id: BBL-TCP-0004
+    name: Echo service enabled
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [echo], ports: [7] }
+    steps:
+      - { send: "babylon-echo-probe\r\n", read: 128, expect: { body: 'babylon-echo-probe' } }
+    finding:
+      title: Echo service is running
+      synopsis: A legacy echo service repeats whatever it receives.
+      description: The echo service has no use on modern systems and can be used for reflection and to link two services into a loop.
+      remediation: Disable echo in inetd/xinetd and block port 7.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: echo, want: finding, responses: [{ data: "babylon-echo-probe\r\n" }] }
+      - { name: silent, want: none, responses: [{ data: "" }] }
+
+  - id: BBL-TCP-0005
+    name: Daytime service enabled
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [daytime], ports: [13] }
+    steps:
+      - { read: 128, expect: { body: '\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b.*\d{2}:\d{2}:\d{2}' } }
+    finding:
+      title: Daytime service is running
+      synopsis: A legacy service reports the system clock to anyone.
+      description: The daytime service leaks the host's local time and is unnecessary on modern systems.
+      remediation: Disable daytime in inetd/xinetd and block port 13.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: daytime, want: finding, responses: [{ data: "Mon Nov 23 10:11:12 2026\r\n" }] }
+      - { name: other, want: none, responses: [{ data: "hello" }] }
+
+  - id: BBL-TCP-0006
+    name: Finger service enabled
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [finger], ports: [79] }
+    steps:
+      - { send: "\r\n", read: 1024, expect: { body: '(?i)login\s+name|no one logged on' } }
+    finding:
+      title: Finger service discloses user information
+      synopsis: The finger daemon lists logged-in users.
+      description: finger reveals account names, login times and sometimes personal data that help with targeted attacks.
+      remediation: Disable the finger daemon and block port 79.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: finger, want: finding, responses: [{ data: "Login     Name       Tty      Idle  Login Time\r\nroot      root       pts/0          Nov 23 10:00\r\n" }] }
+      - { name: closed-down, want: none, responses: [{ data: "finger: service disabled\r\n" }] }
+
+  - id: BBL-UDP-0001
+    name: SSDP/UPnP responder reachable
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: udp
+    when: { services: [upnp, ssdp], ports: [1900] }
+    steps:
+      - send: "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: ssdp:all\r\n\r\n"
+        read: 2048
+        expect: { body: '(?is)^HTTP/1\.1 200 OK.*\bST:\s*(?P<st>\S+)' }
+    finding:
+      title: UPnP (SSDP) answers discovery requests
+      synopsis: The device announces itself and its services to anyone who asks.
+      description: A reply to a unicast M-SEARCH (service type ${st}) shows UPnP is reachable from this network. Exposed UPnP is used for traffic amplification and, on routers, can let software open ports to the internet.
+      remediation: Disable UPnP where it is not needed, and never expose port 1900/udp to untrusted networks.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-7"]
+    tests:
+      - { name: router, want: finding, responses: [{ data: "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=120\r\nST: upnp:rootdevice\r\nUSN: uuid:1234::upnp:rootdevice\r\n\r\n" }] }
+      - { name: other, want: none, responses: [{ data: "garbage" }] }
+
+  - id: BBL-UDP-0002
+    name: mDNS responder lists services
+    family: Service detection
+    severity: low
+    kind: probe
+    transport: udp
+    when: { services: [mdns], ports: [5353] }
+    steps:
+      - send_hex: "000000000001000000000000 095f7365727669636573 075f646e732d7364 045f756470 056c6f63616c00 000c0001"
+        read: 2048
+        expect: { body: '_(tcp|udp)' }
+    finding:
+      title: mDNS answers unicast service-discovery queries
+      synopsis: The device lists the services it offers to anyone who asks.
+      description: A reply to a unicast query for _services._dns-sd._udp.local shows which services (printing, file sharing, remote access) the device advertises.
+      remediation: Block 5353/udp from untrusted networks and disable mDNS responders (Avahi, Bonjour) on servers that do not need them.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: responder, want: finding, responses: [{ data: "\x00\x00\x84\x00\x00\x01\x00\x01\x00\x00\x00\x00\x09_services\x07_dns-sd\x04_udp\x05local\x00\x00\x0c\x00\x01\x04_ssh\x04_tcp\x05local\x00" }] }
+      - { name: other, want: none, responses: [{ data: "nope" }] }
+
+  - id: BBL-UDP-0003
+    name: Chargen service enabled (UDP)
+    family: Service detection
+    severity: medium
+    kind: probe
+    transport: udp
+    when: { services: [chargen], ports: [19] }
+    steps:
+      - { send: "\r\n", read: 2048, expect: { body: '!"#\$%&''\(\)\*\+,-\./0123456789' } }
+    finding:
+      title: Character generator (chargen) answers on UDP
+      synopsis: A legacy test service that is abused for traffic amplification is enabled.
+      description: UDP chargen replies to a single small datagram with a larger one, and is a classic denial-of-service reflector.
+      remediation: Disable chargen in inetd/xinetd and block port 19/udp.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-5"]
+    tests:
+      - { name: chargen, want: finding, responses: [{ data: "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\r\n" }] }
+      - { name: other, want: none, responses: [{ data: "x" }] }

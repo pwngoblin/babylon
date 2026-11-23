@@ -229,6 +229,7 @@ func (a *App) Run(ctx context.Context, id int64, forceSudo bool) (Result, error)
 			out.Warnings = append(out.Warnings, "no OSV package data indexed; package vulnerability matching will report nothing (run: babylon update-feeds --only osv)")
 		}
 	}
+	sopt.PackDir = filepath.Join(a.Home, "checks")
 	if res.Template.Nuclei && res.Template.Ports != "" {
 		if _, _, n, ok, _ := a.St.FeedState(ctx, "nuclei-templates"); ok && n > 0 {
 			sopt.NucleiDir = a.NucleiDir()

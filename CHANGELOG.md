@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Check packs: declarative YAML checks (passive and probe) with built-in and user packs, per-check test fixtures and `babylon checks list|validate|test`. 22 built-in pack checks.
+- `docs/roadmap/PLAN.md`: plan for closing the gap to Nessus.
+
 ## 0.1.1
 
 Everything since v0.1.0.

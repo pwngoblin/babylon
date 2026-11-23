@@ -41,6 +41,7 @@ type Options struct {
 
 	Ports         string        // overrides the template's port list (validated)
 	NucleiDir     string        // nuclei-templates root; "" disables Nuclei stages
+	PackDir       string        // user check packs (*.yaml); "" or missing means built-in packs only
 	NucleiRate    int           // requests/second (default 100)
 	NucleiTimeout time.Duration // per job (default 45m)
 
@@ -157,7 +158,7 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 		if res.Template.UDPTop > 0 {
 			udpDeps = append(udpDeps, StageUDP) // UDP script output feeds the DNS/SNMP/NTP checks
 		}
-		ns, err := nativeStage(st, res, udpDeps...)
+		ns, err := nativeStage(st, res, opt.PackDir, udpDeps...)
 		if err != nil {
 			return nil, err
 		}

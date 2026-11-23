@@ -1,6 +1,6 @@
 # Roadmap
 
-What is built is in [STATUS.md](STATUS.md). This file is what to build next, in order. No dates: pick from the top.
+What is built is in [STATUS.md](STATUS.md). The plan for closing the gap to Nessus (tracks, order, architecture) is in [PLAN.md](PLAN.md). This file is what to build next, in order. No dates: pick from the top.
 
 Rule for every item: non-destructive by default, opt-in flags for anything intrusive, tests with a mock target, no Greenbone/Tenable content.
 

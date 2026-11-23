@@ -7,6 +7,7 @@ import (
 
 	"babylon/internal/native"
 	"babylon/internal/orchestrator"
+	"babylon/internal/pack"
 	"babylon/internal/policy"
 	"babylon/internal/store"
 )
@@ -21,8 +22,12 @@ const (
 // nativeStage runs Babylon's built-in checks over data already collected by
 // earlier stages (knowledge base, services, TLS). Read-only checks do no network
 // I/O; probe-level checks (only with --allow-active) send a few read-only GETs.
-func nativeStage(st *store.Store, res *policy.Resolved, extraDeps ...string) (orchestrator.Stage, error) {
-	ordered, err := native.Order(native.Available(res.Native.MaxSafety), res.Native.MaxSafety)
+func nativeStage(st *store.Store, res *policy.Resolved, packDir string, extraDeps ...string) (orchestrator.Stage, error) {
+	packs, err := pack.Checks(packDir, res.Native.MaxSafety)
+	if err != nil {
+		return orchestrator.Stage{}, fmt.Errorf("check packs: %w", err)
+	}
+	ordered, err := native.Order(append(native.Available(res.Native.MaxSafety), packs...), res.Native.MaxSafety)
 	if err != nil {
 		return orchestrator.Stage{}, err
 	}

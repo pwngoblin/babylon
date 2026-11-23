@@ -78,6 +78,8 @@ type Check struct {
 	Family    string
 	Safety    policy.Safety
 	DependsOn []string
+	// Controls are compliance references (framework:id) this check supports.
+	Controls []string
 	// Needs returns "" when the precondition holds, otherwise a human reason
 	// the check cannot apply (recorded as the skip reason).
 	Needs func(*Env) string

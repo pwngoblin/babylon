@@ -1,0 +1,161 @@
+schema: 1
+checks:
+  - id: BBL-HTTP-0001
+    name: Apache server-status page exposed
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt, http-proxy], ports: [80, 443, 8080, 8443] }
+    steps:
+      - http: { path: /server-status }
+        expect: { status: 200, body: 'Apache Server Status for' }
+    finding:
+      title: Apache server-status page is reachable
+      synopsis: The Apache mod_status page is readable by anyone who can reach this port.
+      description: server-status lists current requests, client addresses and request URLs, which leaks internal paths and session-bearing URLs.
+      remediation: Restrict /server-status to localhost or an admin network (Require local), or disable mod_status.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:AC-3"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '<title>Apache Status</title><h1>Apache Server Status for example.org (via 10.0.0.1)</h1>' }] }
+      - { name: forbidden, want: none, responses: [{ status: 403, body: Forbidden }] }
+
+  - id: BBL-HTTP-0002
+    name: Apache server-info page exposed
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [80, 443, 8080, 8443] }
+    steps:
+      - http: { path: /server-info }
+        expect: { status: 200, body: 'Apache Server Information' }
+    finding:
+      title: Apache server-info page is reachable
+      synopsis: The Apache mod_info page discloses the full server configuration.
+      description: server-info shows loaded modules, configuration directives and file paths, which helps an attacker plan targeted attacks.
+      remediation: Disable mod_info or restrict /server-info to localhost.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '<h1>Apache Server Information</h1>' }] }
+      - { name: missing, want: none, responses: [{ status: 404, body: Not Found }] }
+
+  - id: BBL-HTTP-0003
+    name: nginx stub_status page exposed
+    family: Web Servers
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [80, 443, 8080] }
+    steps:
+      - http: { path: /nginx_status }
+        expect: { status: 200, body: '(?m)^Active connections: (?P<conns>\d+)' }
+    finding:
+      title: nginx stub_status page is reachable
+      synopsis: Connection statistics are readable without authentication.
+      description: The page shows live connection counts (${conns} active). It is low risk on its own but is not meant to be public.
+      remediation: Restrict the stub_status location with allow/deny rules to monitoring hosts.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: "Active connections: 3 \nserver accepts handled requests\n 10 10 12 \nReading: 0 Writing: 1 Waiting: 2 \n" }] }
+      - { name: html, want: none, responses: [{ status: 200, body: '<html>hello</html>' }] }
+
+  - id: BBL-HTTP-0004
+    name: Spring Boot Actuator environment endpoint exposed
+    family: Web Servers
+    severity: high
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [8080, 8443, 9090] }
+    steps:
+      - http: { path: /actuator/env }
+        expect: { status: 200, body: '"propertySources"' }
+    finding:
+      title: Spring Boot Actuator /env endpoint is exposed
+      synopsis: Application configuration, including secrets in environment variables, can be read without authentication.
+      description: The /actuator/env endpoint returns property sources, environment variables and sometimes credentials. Related actuator endpoints can allow heap dumps and configuration changes.
+      remediation: Do not expose actuator endpoints publicly. Set management.endpoints.web.exposure.include to the minimum, and require authentication or a separate management port bound to a private interface.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"activeProfiles":[],"propertySources":[{"name":"systemProperties"}]}' }] }
+      - { name: protected, want: none, responses: [{ status: 401, body: '' }] }
+
+  - id: BBL-HTTP-0007
+    name: Jolokia JMX-over-HTTP endpoint exposed
+    family: Web Servers
+    severity: high
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [8080, 8778, 8161] }
+    steps:
+      - http: { path: /jolokia/version }
+        expect: { status: 200, body: '"agent"\s*:\s*"(?P<ver>[^"]+)"' }
+    finding:
+      title: Jolokia agent ${ver} is reachable without authentication
+      synopsis: JMX management is exposed over HTTP.
+      description: Jolokia lets callers read and, depending on configuration, invoke JMX operations on the JVM. Exposed instances have led to remote code execution.
+      remediation: Require authentication on Jolokia, restrict it with a policy file, and bind it to a private interface.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"request":{"type":"version"},"value":{"agent":"1.7.1","protocol":"7.2"},"status":200}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0008
+    name: Jenkins API readable without authentication
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [8080, 8443] }
+    steps:
+      - http: { path: /api/json }
+        expect: { status: 200, header: { X-Jenkins: '.+' }, body: '"mode"' }
+    finding:
+      title: Jenkins allows anonymous read access
+      synopsis: Job and node information can be read without logging in.
+      description: Anonymous read access exposes job names, build output, node details and configuration, and is often the first step toward a takeover.
+      remediation: Enable security, disable anonymous read access (Matrix or role-based authorization), and put Jenkins behind authentication.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:AC-14"]
+    tests:
+      - { name: anonymous, want: finding, responses: [{ status: 200, header: { X-Jenkins: '2.440' }, body: '{"mode":"NORMAL","nodeDescription":"the Jenkins controller"}' }] }
+      - { name: login-required, want: none, responses: [{ status: 403, header: { X-Jenkins: '2.440' }, body: '' }] }
+
+  - id: BBL-HTTP-0009
+    name: Tomcat Manager application reachable
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [8080, 8443] }
+    steps:
+      - http: { path: /manager/html }
+        expect: { status: 401, header: { WWW-Authenticate: '(?i)Tomcat Manager' } }
+    finding:
+      title: Tomcat Manager is reachable from the network
+      synopsis: The application deployment console is exposed to anyone who can connect.
+      description: Tomcat Manager can deploy arbitrary web applications. It is protected only by a password, and default or weak credentials are a common route to code execution.
+      remediation: Restrict /manager to administrative hosts (RemoteAddrValve) or remove the manager application.
+    controls: ["NIST-800-53:AC-17", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 401, header: { WWW-Authenticate: 'Basic realm="Tomcat Manager Application"' }, body: '' }] }
+      - { name: absent, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0012
+    name: Apache Hadoop NameNode status exposed
+    family: Big Data
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [9870, 50070] }
+    steps:
+      - http: { path: '/jmx?qry=Hadoop:service=NameNode,name=NameNodeInfo' }
+        expect: { status: 200, body: 'NameNodeInfo' }
+    finding:
+      title: Hadoop NameNode JMX is readable without authentication
+      synopsis: Cluster layout and file system statistics are public.
+      description: The NameNode JMX servlet lists live nodes, capacity and version, and shows that the HDFS web interface is not protected.
+      remediation: Enable Kerberos/SPNEGO authentication for the Hadoop web interfaces and restrict them to administrative networks.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"beans":[{"name":"Hadoop:service=NameNode,name=NameNodeInfo"}]}' }] }
+      - { name: denied, want: none, responses: [{ status: 401, body: '' }] }

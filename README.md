@@ -46,6 +46,8 @@ export WPW='your-windows-password'
 ./babylon scan 10.0.0.8 -t credentialed --winrm-user scanner --winrm-password-env WPW --winrm-insecure-tls
 ```
 
+Add your own checks as YAML in `~/.babylon/checks/` (`babylon checks validate`, `babylon checks test`; see `internal/pack/builtin` for examples).
+
 Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus` file. Schedules: pick "Repeat" when you start a scan in the web UI.
 
 ## What it does
