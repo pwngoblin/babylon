@@ -23,3 +23,14 @@ local web server never exits, uses almost no CPU, and prints nothing.
 **What you can try.** Scans on the same machine and Nuclei version completed earlier the same day, so the trigger is
 not yet understood. Try a different Nuclei release (untested here) or another machine. Everything that does not use Nuclei (Nmap, native checks, CVE matching, credentialed audits,
 reports) is unaffected.
+
+## Windows
+
+The first real Windows run (GitHub Actions, 2026-11-23) built the binary and ran most unit tests, but several tests fail there:
+- Many pipeline, Nuclei and web tests use `#!/bin/sh` scripts as stand-ins for `nmap` and `nuclei`; those cannot run on Windows.
+  This is a test-harness limit, not a product defect, but it means Windows behaviour of the scan pipeline is unverified.
+- `TestTimeoutKillsProcessGroup`: killing a process group took 30 s on Windows. This may be a real defect in the
+  `taskkill` path and needs checking on a Windows host.
+- `TestSSHHostKeyPolicyAndRun`: the pinned-host-key file permission check does not hold on Windows file modes.
+
+The Windows CI job is therefore non-blocking, and Windows remains experimental.
