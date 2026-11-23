@@ -197,5 +197,6 @@ func probeChecks() []Check {
 	for _, p := range apiProbes {
 		out = append(out, probeCheck(p))
 	}
-	return append(out, hstsMissing)
+	out = append(out, hstsMissing)
+	return append(out, infraChecks()...)
 }
