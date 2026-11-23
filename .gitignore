@@ -14,3 +14,4 @@ testdata/spike/kev.json
 # browser-test artifacts
 .playwright-mcp/
 ui-*.png
+/babylon

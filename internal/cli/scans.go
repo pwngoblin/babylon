@@ -73,7 +73,7 @@ func newScansCmd() *cobra.Command {
 
 	var format, outFile, accuracy string
 	exp := &cobra.Command{
-		Use: "export <id>", Short: "Export a scan report (json, md, csv)", Args: cobra.ExactArgs(1),
+		Use: "export <id>", Short: "Export a scan report (json, md, csv, html)", Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			id, err := parseID(args[0])
 			if err != nil {
@@ -92,6 +92,12 @@ func newScansCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if format == "pdf" {
+				if outFile == "" {
+					return fmt.Errorf("--format pdf needs -o <file.pdf>")
+				}
+				return report.RenderPDF(c.Context(), r, outFile)
+			}
 			var w io.Writer = c.OutOrStdout()
 			if outFile != "" {
 				f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // reports contain sensitive data
@@ -108,11 +114,13 @@ func newScansCmd() *cobra.Command {
 				return report.WriteMarkdown(w, r)
 			case "csv":
 				return report.WriteCSV(w, r)
+			case "html":
+				return report.WriteHTML(w, r)
 			}
-			return fmt.Errorf("unknown format %q (json, md, csv)", format)
+			return fmt.Errorf("unknown format %q (json, md, csv, html, pdf)", format)
 		},
 	}
-	exp.Flags().StringVar(&format, "format", "md", "json, md or csv")
+	exp.Flags().StringVar(&format, "format", "md", "json, md, csv, html or pdf (pdf needs Chrome/Chromium/weasyprint)")
 	exp.Flags().StringVarP(&outFile, "output", "o", "", "write to a file (mode 0600) instead of stdout")
 	exp.Flags().StringVar(&accuracy, "accuracy", "", "override the scan's report accuracy (normal or avoid-false-alarms)")
 	cmd.AddCommand(exp)

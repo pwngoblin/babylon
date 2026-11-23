@@ -128,3 +128,29 @@ func TestCSVNeutralizesFormulas(t *testing.T) {
 		t.Errorf("csv must be severity-sorted, first row=%v", rows[1])
 	}
 }
+
+func TestWriteHTMLSelfContainedAndEscaped(t *testing.T) {
+	r := &Report{
+		Scan:    ScanInfo{ID: 1, Targets: []string{"10.0.0.1"}, Accuracy: "normal"},
+		Summary: Summary{FindingsBySev: map[string]int{"high": 1}},
+		Hosts:   []Host{{Address: "10.0.0.1", Services: []Service{{Port: 80, Proto: "tcp"}}}},
+		Findings: []Finding{{Severity: "high", Confidence: "firm", Title: "<script>alert(1)</script>", Host: "10.0.0.1",
+			Family: "Brand new family", Evidence: "</pre><img src=x onerror=alert(1)>", KEV: true}},
+		Groups: []Group{{Title: "Apache 2.4.49", Host: "10.0.0.1", Port: 80, Proto: "tcp", CVEs: []string{"CVE-1", "CVE-2"}, Fix: "Upgrade."}},
+	}
+	var b strings.Builder
+	if err := WriteHTML(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, bad := range []string{"<script", "<img src=x", "http://", "https://", "<link", "src=\"http"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("output contains %q", bad)
+		}
+	}
+	for _, want := range []string{"Brand new family", "Apache 2.4.49", "2 CVEs", "&lt;script&gt;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+}

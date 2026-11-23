@@ -186,12 +186,16 @@ type ServiceInfo struct {
 	Version string
 	Tunnel  string
 	CPEs    []string
+	Extra   string // Nmap extrainfo (often names the distribution)
+	Banner  string
+	OS      string // host OS as fingerprinted ("" if unknown)
 }
 
 // OpenServices returns services in state `open` for a scan, ordered by host and port.
 func (s *Store) OpenServices(ctx context.Context, scanID int64) ([]ServiceInfo, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT a.id, a.address, v.port, v.proto, COALESCE(v.name,''), COALESCE(v.product,''),
-		COALESCE(v.version,''), COALESCE(v.tunnel,''), v.cpes
+		COALESCE(v.version,''), COALESCE(v.tunnel,''), v.cpes,
+		COALESCE(v.extrainfo,''), COALESCE(v.banner,''), COALESCE(a.os_name,'')
 		FROM service v JOIN asset a ON a.id=v.asset_id
 		WHERE v.scan_id=? AND v.state='open' ORDER BY a.id, v.proto, v.port`, scanID)
 	if err != nil {
@@ -202,7 +206,7 @@ func (s *Store) OpenServices(ctx context.Context, scanID int64) ([]ServiceInfo, 
 	for rows.Next() {
 		var si ServiceInfo
 		var cpes string
-		if err := rows.Scan(&si.AssetID, &si.Address, &si.Port, &si.Proto, &si.Name, &si.Product, &si.Version, &si.Tunnel, &cpes); err != nil {
+		if err := rows.Scan(&si.AssetID, &si.Address, &si.Port, &si.Proto, &si.Name, &si.Product, &si.Version, &si.Tunnel, &cpes, &si.Extra, &si.Banner, &si.OS); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(cpes), &si.CPEs)

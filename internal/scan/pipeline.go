@@ -42,6 +42,8 @@ type Options struct {
 	NucleiDir     string        // nuclei-templates root; "" disables Nuclei stages
 	NucleiRate    int           // requests/second (default 100)
 	NucleiTimeout time.Duration // per job (default 45m)
+
+	Audit *AuditConfig // credentials for the credentialed stage (in memory only); nil disables it
 }
 
 func (o *Options) defaults() {
@@ -81,8 +83,11 @@ func Stages(res *policy.Resolved, st *store.Store, opt Options) []orchestrator.S
 }
 
 func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestrator.Stage, error) {
+	if opt.NucleiRate == 0 {
+		opt.NucleiRate = res.Timing.NucleiRate // the profile sets the rate unless explicitly overridden
+	}
 	opt.defaults()
-	nopt := nmap.Opts{Privilege: opt.Privilege, MaxRatePPS: res.Template.MaxRatePPS, HostTimeout: opt.HostTimeout, Ports: opt.Ports}
+	nopt := nmap.Opts{Timing: res.Timing, Privilege: opt.Privilege, MaxRatePPS: res.Template.MaxRatePPS, HostTimeout: opt.HostTimeout, Ports: opt.Ports}
 
 	stages := []orchestrator.Stage{{
 		Name:  StageSweep,
@@ -107,12 +112,26 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 	if res.Template.Nuclei && res.Template.Ports != "" && opt.NucleiDir != "" {
 		stages = append(stages, newNucleiRuntime(st, res, opt).stages()...)
 	}
+	if res.Template.CPEMatch && res.Template.Ports != "" {
+		var deps []string
+		if res.Template.Nuclei && opt.NucleiDir != "" {
+			deps = append(deps, StageNucleiDetect) // web versions found by detection feed the matcher
+		}
+		stages = append(stages, cpeMatchStage(st, deps...))
+	}
 	if res.Native.Enabled && res.Template.Ports != "" {
 		ns, err := nativeStage(st, res)
 		if err != nil {
 			return nil, err
 		}
 		stages = append(stages, ns)
+	}
+	if res.Template.Audit && res.Template.Ports != "" && opt.Audit != nil {
+		deps := []string{StagePortscan}
+		if res.Template.CPEMatch {
+			deps = append(deps, StageCPEMatch) // banner guesses must exist before the audit can supersede them
+		}
+		stages = append(stages, auditStage(st, opt.Audit, deps))
 	}
 	return stages, nil
 }

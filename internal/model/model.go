@@ -96,6 +96,8 @@ type Finding struct {
 	EngineRef   string // template id / check id
 	Evidence    string // redacted, size-capped
 	RawRef      string
+	Product     string // product/version the finding is about (version-derived findings); the root-cause grouping key
+	Version     string
 }
 
 // Confidence levels, ordered weakest to strongest.

@@ -12,8 +12,10 @@ const (
 
 // Flags are the explicit, user-supplied opt-ins.
 type Flags struct {
-	AllowActive       bool // probe-level native checks (Full template only)
-	CheckDefaultCreds bool // Nuclei default-login templates
+	AllowActive       bool   // probe-level native checks (Full template only)
+	CheckDefaultCreds bool   // Nuclei default-login templates
+	Deep              bool   `json:"deep,omitempty"`   // run every allowed Nuclei template, not just technology-matched ones (slow)
+	Timing            string `json:"timing,omitempty"` // standard (default), fast-lan, polite
 }
 
 // Template is declarative scan intent. It contains no argv and no tool strings
@@ -61,6 +63,7 @@ type Resolved struct {
 	Nuclei   NucleiConfig
 	Native   NativeConfig
 	Flags    Flags
+	Timing   Timing
 }
 
 // Resolve expands a template and flags into engine configs, then validates them.
@@ -73,7 +76,11 @@ func Resolve(name string, f Flags) (*Resolved, error) {
 		return nil, fmt.Errorf("--allow-active is only valid with the %s template", TemplateFullUnauth)
 	}
 
-	r := &Resolved{Template: t, Flags: f}
+	timing, err := ResolveTiming(f.Timing)
+	if err != nil {
+		return nil, err
+	}
+	r := &Resolved{Template: t, Flags: f, Timing: timing}
 
 	if t.NSE {
 		r.NSE = NSEConfig{Scripts: vulnNSEScripts, Named: CuratedNSEScripts()}

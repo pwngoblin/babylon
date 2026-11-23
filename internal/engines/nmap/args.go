@@ -31,7 +31,8 @@ type Opts struct {
 	Privilege   Privilege
 	MaxRatePPS  int
 	HostTimeout time.Duration
-	Ports       string // validated port list overriding the template (e.g. "22,80,8000-8100"); "" = template default
+	Timing      policy.Timing // pacing profile; zero value behaves like standard
+	Ports       string        // validated port list overriding the template (e.g. "22,80,8000-8100"); "" = template default
 }
 
 // ValidPorts accepts only comma-separated ports and ranges within 1-65535, so a
@@ -94,9 +95,27 @@ func checkTargets(targets []string) error {
 }
 
 func common(xmlPath string, o Opts) []string {
-	args := []string{"-n", "--no-stylesheet", "-oX", xmlPath, "--max-retries", "2"}
+	t := o.Timing
+	retries := t.MaxRetries
+	if retries == 0 {
+		retries = 2
+	}
+	args := []string{"-n", "--no-stylesheet", "-oX", xmlPath, "--max-retries", strconv.Itoa(retries)}
+	if t.NmapT > 0 {
+		args = append(args, "-T"+strconv.Itoa(t.NmapT))
+	}
+	if t.MaxRTT != "" {
+		args = append(args, "--max-rtt-timeout", t.MaxRTT)
+	}
+	if t.InitRTT != "" {
+		args = append(args, "--initial-rtt-timeout", t.InitRTT)
+	}
 	if o.MaxRatePPS > 0 {
-		args = append(args, "--max-rate", strconv.Itoa(o.MaxRatePPS))
+		rate := o.MaxRatePPS
+		if t.RateFactor > 0 {
+			rate = max(1, rate*t.RateFactor/100)
+		}
+		args = append(args, "--max-rate", strconv.Itoa(rate))
 	}
 	if o.HostTimeout > 0 {
 		args = append(args, "--host-timeout", fmt.Sprintf("%ds", int(o.HostTimeout.Seconds())))
@@ -157,7 +176,11 @@ func ScanArgs(res *policy.Resolved, targets []string, xmlPath string, o Opts) ([
 		if err != nil {
 			return nil, err
 		}
-		args = append(args, "--script", expr, "--script-timeout", "60s")
+		st := o.Timing.ScriptTimeout
+		if st == "" {
+			st = "60s"
+		}
+		args = append(args, "--script", expr, "--script-timeout", st)
 	}
 	args = append(args, common(xmlPath, o)...)
 	return append(args, targets...), nil

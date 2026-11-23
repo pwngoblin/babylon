@@ -164,10 +164,12 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 		ctype, ext, err = "application/json", "json", report.WriteJSON(&buf, rep)
 	case "csv":
 		ctype, ext, err = "text/csv", "csv", report.WriteCSV(&buf, rep)
+	case "html":
+		ctype, ext, err = "text/html", "html", report.WriteHTML(&buf, rep)
 	case "md", "markdown", "":
 		ctype, ext, err = "text/markdown", "md", report.WriteMarkdown(&buf, rep)
 	default:
-		writeErr(w, 400, "format must be json, md or csv")
+		writeErr(w, 400, "format must be json, md, csv or html")
 		return
 	}
 	if err != nil {

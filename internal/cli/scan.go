@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"babylon/internal/app"
+	"babylon/internal/audit"
+	"babylon/internal/group"
 	"babylon/internal/orchestrator"
 	"babylon/internal/policy"
 	"babylon/internal/scan"
@@ -19,21 +21,26 @@ import (
 )
 
 type scanOptions struct {
-	home        string
-	template    string
-	name        string
-	targetFile  string
-	workers     int
-	useSudo     bool
-	authorized  bool
-	allowActive bool
-	defaultCred bool
-	resume      int64
-	deny        []string
-	maxHosts    uint64
-	nucleiWork  int
-	ports       string
-	accuracy    string
+	deep                                                                bool
+	timing                                                              string
+	sshUser, sshKey, sshPassEnv, sshPassphraseEnv, sshLabel, knownHosts string
+	sshPort                                                             int
+	trustNew                                                            bool
+	home                                                                string
+	template                                                            string
+	name                                                                string
+	targetFile                                                          string
+	workers                                                             int
+	useSudo                                                             bool
+	authorized                                                          bool
+	allowActive                                                         bool
+	defaultCred                                                         bool
+	resume                                                              int64
+	deny                                                                []string
+	maxHosts                                                            uint64
+	nucleiWork                                                          int
+	ports                                                               string
+	accuracy                                                            string
 }
 
 func newScanCmd() *cobra.Command {
@@ -64,7 +71,17 @@ Targets are IPs, CIDRs or hostnames. Public addresses are refused unless
 	f.StringSliceVar(&o.deny, "deny", nil, "CIDR never to scan (repeatable)")
 	f.StringVar(&o.ports, "ports", "", "TCP ports to scan, e.g. 22,80,8000-8100 (default: template's list)")
 	f.IntVar(&o.nucleiWork, "nuclei-workers", 2, "concurrent nuclei processes")
+	f.BoolVar(&o.deep, "deep", false, "run every allowed Nuclei template against every web/network service (finds more, much slower)")
+	f.StringVar(&o.timing, "timing", policy.TimingStandard, "scan pacing: "+strings.Join(policy.TimingNames(), ", ")+" (fast-lan is for private networks only)")
 	f.StringVar(&o.accuracy, "accuracy", app.AccuracyNormal, "report accuracy: normal (show unverified findings in their own section) or avoid-false-alarms (hide them)")
+	f.StringVar(&o.sshUser, "ssh-user", "", "SSH user for credentialed audits (template: credentialed)")
+	f.StringVar(&o.sshKey, "ssh-key", "", "path to an SSH private key")
+	f.StringVar(&o.sshPassEnv, "ssh-password-env", "", "name of an environment variable holding the SSH password (never pass secrets as flags)")
+	f.StringVar(&o.sshPassphraseEnv, "ssh-passphrase-env", "", "name of an environment variable holding the key passphrase")
+	f.IntVar(&o.sshPort, "ssh-port", 22, "SSH port")
+	f.StringVar(&o.sshLabel, "ssh-label", "", "label recorded with the scan to identify this credential set (default: the user name)")
+	f.StringVar(&o.knownHosts, "known-hosts", "", "known_hosts file used to verify hosts (default ~/.ssh/known_hosts)")
+	f.BoolVar(&o.trustNew, "trust-new-hosts", false, "trust unknown SSH host keys on first use and pin them in ~/.babylon/known_hosts (changed keys are still rejected)")
 	f.Uint64Var(&o.maxHosts, "max-hosts", 0, "refuse scans expanding to more addresses than this (default 1048576)")
 	return cmd
 }
@@ -85,6 +102,17 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 		return err
 	}
 	defer a.Close()
+	creds, err := o.sshCreds()
+	if err != nil {
+		return err
+	}
+	if creds != nil {
+		if o.template != policy.TemplateCredentialed && o.resume == 0 {
+			return fmt.Errorf("--ssh-* options need --template %s", policy.TemplateCredentialed)
+		}
+		a.SSH = creds
+		a.HostKeys = audit.HostKeyPolicy{KnownHosts: o.knownHosts, TrustNew: o.trustNew}
+	}
 	a.AllowSudo = true // an interactive user may use sudo; `sudo -n` fails safely without a cached ticket
 
 	id := o.resume
@@ -104,7 +132,7 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 		}
 		id, err = a.Create(ctx, app.Request{
 			Name: o.name, Template: o.template, Targets: raw, Ports: o.ports, Accuracy: o.accuracy,
-			AllowActive: o.allowActive, CheckDefaultCreds: o.defaultCred, Authorized: o.authorized, Sudo: o.useSudo,
+			Timing: o.timing, Deep: o.deep, AllowActive: o.allowActive, CheckDefaultCreds: o.defaultCred, Authorized: o.authorized, Sudo: o.useSudo,
 			Workers: o.workers, NucleiWorkers: o.nucleiWork, Deny: o.deny, MaxHosts: o.maxHosts,
 		})
 		if err != nil {
@@ -153,7 +181,7 @@ type orchestratorSummary = orchestrator.Summary
 
 func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, sum orchestrator.Summary, took time.Duration, accuracy string) {
 	fmt.Fprintf(w, "\nScan %d %s in %s\n", id, sum.Status, took.Round(time.Millisecond))
-	for _, stage := range []string{scan.StageSweep, scan.StagePortscan, scan.StageNucleiDetect, scan.StageNucleiScan, scan.StageNative} {
+	for _, stage := range []string{scan.StageSweep, scan.StagePortscan, scan.StageNucleiDetect, scan.StageNucleiScan, scan.StageCPEMatch, scan.StageNative, scan.StageAudit} {
 		c, ok := sum.Counts[stage]
 		if !ok {
 			continue
@@ -214,7 +242,29 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 			return
 		}
 		fmt.Fprintf(w, "\n%s (%d)\n", title, len(list))
-		for _, f := range list {
+		groups, rest := group.Build(list)
+		for _, g := range groups {
+			kev := ""
+			if g.KEVCount > 0 {
+				kev = " KEV"
+			}
+			cvss := ""
+			if g.MaxCVSS != nil {
+				cvss = fmt.Sprintf("  max CVSS %.1f", *g.MaxCVSS)
+			}
+			fmt.Fprintf(w, "  %-8s %-22s %s%s%s  [%s]\n", strings.ToUpper(g.Severity), fmt.Sprintf("%s:%d", g.Address, g.Port), g.Title, cvss, kev, g.Confidence)
+			fmt.Fprintf(w, "           fix: %s\n", g.Fix)
+			shown := g.CVEs
+			if len(shown) > 8 {
+				shown = shown[:8]
+			}
+			more := ""
+			if len(g.CVEs) > len(shown) {
+				more = fmt.Sprintf(" … +%d more (babylon scans show %d)", len(g.CVEs)-len(shown), id)
+			}
+			fmt.Fprintf(w, "           %s%s\n", strings.Join(shown, ", "), more)
+		}
+		for _, f := range rest {
 			where := f.Address
 			if f.Port != 0 {
 				where = fmt.Sprintf("%s:%d", f.Address, f.Port)
@@ -223,7 +273,11 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 			if len(f.CVEs) > 0 {
 				cve = "  " + strings.Join(f.CVEs, ",")
 			}
-			fmt.Fprintf(w, "  %-8s %-22s %s%s  [%s]\n", strings.ToUpper(f.Severity), where, f.Title, cve, strings.Join(f.Engines, "+"))
+			kev := ""
+			if f.KEV {
+				kev = " KEV"
+			}
+			fmt.Fprintf(w, "  %-8s %-22s %s%s%s  [%s]\n", strings.ToUpper(f.Severity), where, f.Title, cve, kev, strings.Join(f.Engines, "+"))
 		}
 	}
 	section("Findings", verified)
@@ -233,4 +287,34 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 		fmt.Fprintf(w, "\n%d possible findings hidden by --accuracy avoid-false-alarms (stored; nothing is deleted)\n", len(possible))
 	}
 	section("Informational", informational)
+}
+
+// sshCreds builds in-memory credentials from flags and environment. Secrets
+// are read from environment variables, so they never appear in shell history or
+// the process list. nil means no SSH options were given.
+func (o scanOptions) sshCreds() (*audit.Creds, error) {
+	if o.sshUser == "" && o.sshKey == "" && o.sshPassEnv == "" {
+		return nil, nil
+	}
+	if o.sshUser == "" {
+		return nil, fmt.Errorf("--ssh-user is required")
+	}
+	c := &audit.Creds{User: o.sshUser, KeyPath: o.sshKey, Port: o.sshPort, Label: o.sshLabel}
+	if c.Label == "" {
+		c.Label = o.sshUser
+	}
+	if o.sshPassEnv != "" {
+		if c.Password = os.Getenv(o.sshPassEnv); c.Password == "" {
+			return nil, fmt.Errorf("environment variable %s is empty or unset", o.sshPassEnv)
+		}
+	}
+	if o.sshPassphraseEnv != "" {
+		if c.Passphrase = os.Getenv(o.sshPassphraseEnv); c.Passphrase == "" {
+			return nil, fmt.Errorf("environment variable %s is empty or unset", o.sshPassphraseEnv)
+		}
+	}
+	if c.KeyPath == "" && c.Password == "" {
+		return nil, fmt.Errorf("give --ssh-key or --ssh-password-env")
+	}
+	return c, nil
 }

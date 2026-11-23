@@ -68,19 +68,20 @@ func (s *Store) RecordFinding(ctx context.Context, scanID int64, f model.Finding
 			fid                      int64
 			curSev, curConf, curDesc string
 			curSyn, curRem, curSol   sql.NullString
+			curDet                   string
 			curCVSS                  sql.NullFloat64
 			curVec                   sql.NullString
 		)
-		err = tx.QueryRow(`SELECT id,severity,confidence,COALESCE(description,''),synopsis,remediation,solution_type,cvss_score,cvss_vector
-			FROM finding WHERE fingerprint=?`, f.Fingerprint).Scan(&fid, &curSev, &curConf, &curDesc, &curSyn, &curRem, &curSol, &curCVSS, &curVec)
+		err = tx.QueryRow(`SELECT id,severity,confidence,COALESCE(description,''),synopsis,remediation,solution_type,cvss_score,cvss_vector,detection
+			FROM finding WHERE fingerprint=?`, f.Fingerprint).Scan(&fid, &curSev, &curConf, &curDesc, &curSyn, &curRem, &curSol, &curCVSS, &curVec, &curDet)
 		switch {
 		case err == sql.ErrNoRows:
 			r, err := tx.Exec(`INSERT INTO finding(fingerprint,asset_id,port,proto,title,family,severity,cvss_score,cvss_vector,epss,
-				synopsis,description,remediation,solution_type,confidence,detection,first_seen_scan)
-				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				synopsis,description,remediation,solution_type,confidence,detection,first_seen_scan,product,version)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				f.Fingerprint, aid, nullInt(f.Port), nullable(f.Proto), f.Title, nullable(f.Family), f.Severity,
 				nullFloat(f.CVSS), nullable(f.CVSSVector), nullFloat(f.EPSS), nullable(f.Synopsis), nullable(f.Description),
-				nullable(f.Remediation), nullable(f.Solution), f.Confidence, f.Detection, scanID)
+				nullable(f.Remediation), nullable(f.Solution), f.Confidence, f.Detection, scanID, nullable(f.Product), nullable(f.Version))
 			if err != nil {
 				return err
 			}
@@ -97,6 +98,18 @@ func (s *Store) RecordFinding(ctx context.Context, scanID int64, f model.Finding
 			detection := ""
 			if model.ConfidenceRank(f.Confidence) > model.ConfidenceRank(conf) {
 				conf, detection = f.Confidence, f.Detection
+			}
+			// A version-derived finding corroborated by an independent behavioural
+			// check (a probe or template that saw the vulnerable behaviour) is confirmed.
+			firm := model.ConfidenceRank(model.ConfFirm)
+			if (curDet == "version" && f.Detection == "behaviour" && model.ConfidenceRank(f.Confidence) >= firm) ||
+				(curDet == "behaviour" && f.Detection == "version" && model.ConfidenceRank(curConf) >= firm) {
+				conf = model.ConfConfirmed
+			}
+			if f.Product != "" {
+				if _, err := tx.Exec(`UPDATE finding SET product=COALESCE(product,?), version=COALESCE(version,?) WHERE id=?`, f.Product, nullable(f.Version), fid); err != nil {
+					return err
+				}
 			}
 			cvss, vec := curCVSS, curVec
 			if f.CVSS != nil && (!cvss.Valid || *f.CVSS > cvss.Float64) {
@@ -122,6 +135,15 @@ func (s *Store) RecordFinding(ctx context.Context, scanID int64, f model.Finding
 				continue
 			}
 			if _, err := tx.Exec(`INSERT OR IGNORE INTO finding_cve(finding_id,cve_id) VALUES(?,?)`, fid, c); err != nil {
+				return err
+			}
+		}
+		if len(f.CVEs) > 0 { // threat-intel enrichment from the local feeds
+			if _, err := tx.Exec(`UPDATE finding SET
+				kev = EXISTS(SELECT 1 FROM finding_cve fc JOIN kev k ON k.cve_id=fc.cve_id WHERE fc.finding_id=finding.id),
+				epss = (SELECT MAX(e.score) FROM finding_cve fc JOIN epss e ON e.cve_id=fc.cve_id WHERE fc.finding_id=finding.id),
+				cvss_score = COALESCE(cvss_score, (SELECT MAX(c.cvss_v3) FROM finding_cve fc JOIN cve c ON c.cve_id=fc.cve_id WHERE fc.finding_id=finding.id))
+				WHERE id=?`, fid); err != nil {
 				return err
 			}
 		}
@@ -162,6 +184,9 @@ type FindingRow struct {
 	Family      string
 	Severity    string
 	CVSS        *float64
+	EPSS        *float64
+	Product     string
+	Version     string
 	CVEs        []string
 	KEV         bool
 	Synopsis    string
@@ -179,7 +204,7 @@ type FindingRow struct {
 func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence string) ([]FindingRow, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT f.id, a.address, COALESCE(f.port,0), COALESCE(f.proto,''), f.title, COALESCE(f.family,''),
 		f.severity, f.cvss_score, f.kev, COALESCE(f.synopsis,''), COALESCE(f.description,''), COALESCE(f.remediation,''),
-		f.confidence, f.detection
+		f.confidence, f.detection, f.epss, COALESCE(f.product,''), COALESCE(f.version,'')
 		FROM finding f JOIN asset a ON a.id=f.asset_id
 		WHERE f.id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?)`, scanID)
 	if err != nil {
@@ -188,16 +213,20 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 	var out []FindingRow
 	for rows.Next() {
 		var r FindingRow
-		var cvss sql.NullFloat64
+		var cvss, epss sql.NullFloat64
 		var kev int
 		if err := rows.Scan(&r.ID, &r.Address, &r.Port, &r.Proto, &r.Title, &r.Family, &r.Severity, &cvss, &kev,
-			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection); err != nil {
+			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection, &epss, &r.Product, &r.Version); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		if cvss.Valid {
 			v := cvss.Float64
 			r.CVSS = &v
+		}
+		if epss.Valid {
+			v := epss.Float64
+			r.EPSS = &v
 		}
 		r.KEV = kev == 1
 		if minConfidence == "" || model.ConfidenceRank(r.Confidence) >= model.ConfidenceRank(minConfidence) {
@@ -239,29 +268,7 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 		or.Close()
 		out[i].Evidence = strings.Join(ev, "\n")
 	}
-	sort.SliceStable(out, func(a, b int) bool {
-		x, y := out[a], out[b]
-		if sx, sy := model.SeverityRank(x.Severity), model.SeverityRank(y.Severity); sx != sy {
-			return sx > sy
-		}
-		if x.KEV != y.KEV {
-			return x.KEV
-		}
-		cx, cy := 0.0, 0.0
-		if x.CVSS != nil {
-			cx = *x.CVSS
-		}
-		if y.CVSS != nil {
-			cy = *y.CVSS
-		}
-		if cx != cy {
-			return cx > cy
-		}
-		if x.Address != y.Address {
-			return x.Address < y.Address
-		}
-		return x.Title < y.Title
-	})
+	sort.SliceStable(out, func(a, b int) bool { return PriorityLess(out[a], out[b]) })
 	return out, nil
 }
 
@@ -325,4 +332,35 @@ func (s *Store) CheckRunCounts(ctx context.Context, scanID int64) (map[string]in
 		out[st] = n
 	}
 	return out, rows.Err()
+}
+
+// PriorityLess orders findings for display: KEV first, then confidence,
+// CVSS, EPSS; severity, host and title break ties for a stable order.
+func PriorityLess(x, y FindingRow) bool {
+	if x.KEV != y.KEV {
+		return x.KEV
+	}
+	if cx, cy := model.ConfidenceRank(x.Confidence), model.ConfidenceRank(y.Confidence); cx != cy {
+		return cx > cy
+	}
+	if vx, vy := deref(x.CVSS), deref(y.CVSS); vx != vy {
+		return vx > vy
+	}
+	if ex, ey := deref(x.EPSS), deref(y.EPSS); ex != ey {
+		return ex > ey
+	}
+	if sx, sy := model.SeverityRank(x.Severity), model.SeverityRank(y.Severity); sx != sy {
+		return sx > sy
+	}
+	if x.Address != y.Address {
+		return x.Address < y.Address
+	}
+	return x.Title < y.Title
+}
+
+func deref(f *float64) float64 {
+	if f == nil {
+		return 0
+	}
+	return *f
 }

@@ -223,3 +223,12 @@ func TestNoIndexMeansNoNucleiJobsNotFailure(t *testing.T) {
 		t.Fatalf("sum=%+v err=%v", sum, err)
 	}
 }
+
+func TestProductNamedRejectsMismatchedTemplateMetadata(t *testing.T) {
+	if productNamed("opensuse", "vsftpd-detect vsFTPd Service - Detect") {
+		t.Error("an unrelated product from bad template metadata must be rejected")
+	}
+	if !productNamed("nginx", "nginx-version Nginx version detect") || !productNamed("vsftpd", "vsftpd-detect vsFTPd Service - Detect") {
+		t.Error("matching product names must pass")
+	}
+}

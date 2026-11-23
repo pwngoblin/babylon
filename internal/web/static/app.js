@@ -208,7 +208,8 @@ async function scanView(id, tab) {
         el('div', { class: 'row' }, badge(running ? 'running' : s.Status),
           running ? el('button', { onclick: () => act('/api/scans/' + id + '/cancel', 'POST', 'Cancelling…') }, 'Cancel') : null,
           !running && s.Status !== 'completed' ? el('button', { class: 'primary', onclick: () => act('/api/scans/' + id + '/resume', 'POST', 'Resuming…') }, 'Resume') : null,
-          el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=md' }, 'Export MD'),
+          el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=html' }, 'Export HTML'),
+          el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=md' }, 'MD'),
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=json' }, 'JSON'),
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=csv' }, 'CSV'),
           el('button', { class: 'danger', disabled: running, onclick: async () => {
@@ -273,7 +274,7 @@ async function scanView(id, tab) {
           el('td', {}, f.title, f.possible ? el('span', { class: 'badge s-partial', style: 'margin-left:8px' }, 'possible') : null),
           el('td', { class: 'mono' }, f.host + (f.port ? ':' + f.port : '')),
           el('td', {}, (f.cve_ids || []).join(', ')),
-          el('td', {}, f.cvss_score != null ? f.cvss_score.toFixed(1) : ''),
+          el('td', {}, f.cvss_score != null ? f.cvss_score.toFixed(1) : '', f.kev ? el('span', { class: 'badge s-failed', style: 'margin-left:6px', title: 'Listed in CISA Known Exploited Vulnerabilities' }, 'KEV') : null, f.epss_score != null ? el('span', { class: 'muted', style: 'margin-left:6px', title: 'EPSS exploit probability' }, 'EPSS ' + (f.epss_score * 100).toFixed(1) + '%') : null),
           el('td', { class: 'muted' }, (f.engines || []).join(' + ')));
         const toggle = () => { detail.hidden = !detail.hidden; row.setAttribute('aria-expanded', String(!detail.hidden)); };
         row.addEventListener('click', toggle);
@@ -284,9 +285,30 @@ async function scanView(id, tab) {
     };
     [sevSel, confSel].forEach(c => c.addEventListener('change', draw));
     q.addEventListener('input', draw);
-    wrap.append(el('div', { class: 'filters' }, el('div', {}, sevSel), el('div', {}, confSel), el('div', { style: 'flex:1;min-width:200px' }, q)), list);
+    wrap.append(...[rootCauses(rep)].filter(Boolean), el('div', { class: 'filters' }, el('div', {}, sevSel), el('div', {}, confSel), el('div', { style: 'flex:1;min-width:200px' }, q)), list);
     draw();
     return wrap;
+  }
+
+  // Root-cause grouping: one actionable item per outdated product, expandable to its CVEs.
+  function rootCauses(rep) {
+    const groups = rep.root_causes || [];
+    if (!groups.length) return null;
+    return el('div', { style: 'margin-bottom:20px' },
+      el('h2', {}, 'Priority action plan (' + groups.length + ' root causes)'),
+      el('div', { class: 'card' }, groups.map(g => {
+        const detail = el('div', { hidden: true, style: 'margin-top:8px' },
+          el('p', {}, g.remediation),
+          el('p', { class: 'muted' }, 'Confidence of the group is that of its least certain CVE: ' + g.confidence + '.'),
+          el('p', {}, ...g.cve_ids.flatMap((c, i) => [i ? ', ' : '', cveLink(c)])));
+        const head = el('div', { class: 'row between click', tabindex: 0, role: 'button', 'aria-expanded': 'false' },
+          el('span', {}, sevChip(g.severity), ' ', el('b', {}, g.title), el('span', { class: 'muted', style: 'margin-left:8px' }, g.host + ':' + g.port)),
+          el('span', { class: 'muted' }, (g.max_cvss != null ? 'max CVSS ' + g.max_cvss.toFixed(1) : '') + (g.kev_count ? '  · ' + g.kev_count + ' KEV' : '')));
+        const toggle = () => { detail.hidden = !detail.hidden; head.setAttribute('aria-expanded', String(!detail.hidden)); };
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+        return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' }, head, detail);
+      })));
   }
 
   function findingDetail(f) {

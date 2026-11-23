@@ -3,6 +3,7 @@
 package app
 
 import (
+	"babylon/internal/audit"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,11 @@ type App struct {
 	// process is not root. It is decided by whoever starts the process, never
 	// by a (possibly remote) scan request.
 	AllowSudo bool
+	// SSH holds credentials for credentialed scans. They live in memory for
+	// this process only, are set by the local operator (never by a web
+	// request), and are never written to the database.
+	SSH      *audit.Creds
+	HostKeys audit.HostKeyPolicy
 }
 
 // Open opens (creating if needed) the data directory and database.
@@ -65,6 +71,8 @@ type Request struct {
 	Sudo              bool     `json:"sudo"`
 	Workers           int      `json:"workers"`
 	NucleiWorkers     int      `json:"nuclei_workers"`
+	Deep              bool     `json:"deep"`
+	Timing            string   `json:"timing"` // standard (default), fast-lan, polite
 	Deny              []string `json:"deny"`
 	MaxHosts          uint64   `json:"max_hosts"`
 }
@@ -78,6 +86,7 @@ type persisted struct {
 	Accuracy      string       `json:"accuracy"`
 	Ports         string       `json:"ports,omitempty"`
 	Authorized    bool         `json:"authorized,omitempty"`
+	SSHLabel      string       `json:"ssh_label,omitempty"` // name of the credential set; the secret itself is never stored
 }
 
 // Create validates a request against policy (scope guard, template/flag rules,
@@ -95,13 +104,13 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	if err := nmap.ValidPorts(req.Ports); err != nil {
 		return 0, err
 	}
-	flags := policy.Flags{AllowActive: req.AllowActive, CheckDefaultCreds: req.CheckDefaultCreds}
+	flags := policy.Flags{AllowActive: req.AllowActive, CheckDefaultCreds: req.CheckDefaultCreds, Timing: req.Timing, Deep: req.Deep}
 	res, err := policy.Resolve(req.Template, flags)
 	if err != nil {
 		return 0, err
 	}
-	if res.Template.RequiresCreds {
-		return 0, fmt.Errorf("template %q needs credentials, which are not implemented yet", req.Template)
+	if res.Template.RequiresCreds && a.SSH == nil {
+		return 0, fmt.Errorf("template %q needs SSH credentials: pass --ssh-user with --ssh-key or --ssh-password-env (CLI only for now; credentials are never stored)", req.Template)
 	}
 	parsed, err := policy.ParseTargets(req.Targets)
 	if err != nil {
@@ -122,6 +131,9 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	targets := make([]string, 0, len(resolved))
 	for _, t := range resolved {
 		targets = append(targets, prefixString(t.Prefix))
+		if res.Timing.PrivateOnly && !(policy.IsPrivate(t.Prefix.Addr()) && policy.IsPrivate(lastAddr(t.Prefix))) {
+			return 0, fmt.Errorf("timing profile %q is only for private networks; %s is not private (use standard or polite)", res.Timing.Name, prefixString(t.Prefix))
+		}
 	}
 	if req.Workers <= 0 {
 		req.Workers = 2
@@ -131,6 +143,9 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	}
 	po := persisted{Flags: flags, Workers: req.Workers, NucleiWorkers: req.NucleiWorkers,
 		Sudo: req.Sudo && a.AllowSudo, Accuracy: req.Accuracy, Ports: req.Ports, Authorized: req.Authorized}
+	if a.SSH != nil {
+		po.SSHLabel = a.SSH.Label
+	}
 	return a.St.CreateScan(ctx, req.Name, req.Template, targets, po)
 }
 
@@ -184,11 +199,25 @@ func (a *App) Run(ctx context.Context, id int64, forceSudo bool) (Result, error)
 	}
 
 	sopt := scan.Options{Privilege: priv, Ports: po.Ports}
+	if res.Template.Audit {
+		if a.SSH == nil {
+			return out, fmt.Errorf("scan %d is a credentialed scan: supply the SSH credentials again (--ssh-user and --ssh-key or --ssh-password-env); they are never stored", id)
+		}
+		sopt.Audit = &scan.AuditConfig{Creds: *a.SSH, HostKeys: a.HostKeys}
+		if n, _, _ := a.St.CountOSV(ctx); n == 0 {
+			out.Warnings = append(out.Warnings, "no OSV package data indexed; package vulnerability matching will report nothing (run: babylon update-feeds --only osv)")
+		}
+	}
 	if res.Template.Nuclei && res.Template.Ports != "" {
 		if _, _, n, ok, _ := a.St.FeedState(ctx, "nuclei-templates"); ok && n > 0 {
 			sopt.NucleiDir = a.NucleiDir()
 		} else {
 			out.Warnings = append(out.Warnings, "no Nuclei templates indexed; web/CVE template checks will be skipped (run: babylon update-feeds)")
+		}
+	}
+	if res.Template.CPEMatch && res.Template.Ports != "" {
+		if n, _, _ := a.St.CountCVEs(ctx); n == 0 {
+			out.Warnings = append(out.Warnings, "no vulnerability data indexed; version-based CVE matching will be skipped (run: babylon update-feeds)")
 		}
 	}
 	workers, nworkers := po.Workers, po.NucleiWorkers
@@ -250,4 +279,15 @@ func (a *App) RemoveScanData(ctx context.Context, id int64) error {
 		return err
 	}
 	return os.RemoveAll(filepath.Join(a.Home, "scans", fmt.Sprint(id)))
+}
+
+// lastAddr returns the last address of a prefix.
+func lastAddr(p netip.Prefix) netip.Addr {
+	a := p.Masked().Addr()
+	b := a.AsSlice()
+	for i := p.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= 1 << (7 - uint(i%8))
+	}
+	r, _ := netip.AddrFromSlice(b)
+	return r
 }

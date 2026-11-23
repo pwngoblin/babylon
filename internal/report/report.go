@@ -9,10 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
 
+	"babylon/internal/group"
 	"babylon/internal/store"
 )
 
@@ -26,6 +26,7 @@ type Report struct {
 	Summary       Summary   `json:"summary"`
 	Hosts         []Host    `json:"hosts"`
 	Findings      []Finding `json:"findings"`
+	Groups        []Group   `json:"root_causes,omitempty"`
 	Coverage      Coverage  `json:"coverage"`
 }
 
@@ -57,6 +58,17 @@ type Host struct {
 	Hostnames []string  `json:"hostnames,omitempty"`
 	OS        string    `json:"os,omitempty"`
 	Services  []Service `json:"services"`
+	Audit     *Audit    `json:"credentialed_audit,omitempty"`
+}
+
+// Audit is the outcome of a credentialed audit of the host (never any secret).
+type Audit struct {
+	Result    string `json:"result"` // ok | partial | failed
+	OS        string `json:"os,omitempty"`
+	Kernel    string `json:"kernel,omitempty"`
+	Ecosystem string `json:"ecosystem,omitempty"`
+	Packages  int    `json:"packages"`
+	Error     string `json:"error,omitempty"`
 }
 
 type Service struct {
@@ -79,13 +91,33 @@ type Finding struct {
 	Family      string   `json:"family,omitempty"`
 	CVEs        []string `json:"cve_ids,omitempty"`
 	CVSS        *float64 `json:"cvss_score,omitempty"`
+	EPSS        *float64 `json:"epss_score,omitempty"`
 	KEV         bool     `json:"kev"`
+	Product     string   `json:"product,omitempty"`
+	Version     string   `json:"version,omitempty"`
 	Synopsis    string   `json:"synopsis,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Remediation string   `json:"remediation,omitempty"`
 	Evidence    string   `json:"evidence,omitempty"`
 	Engines     []string `json:"engines"`
 	Possible    bool     `json:"possible"` // unverified, version-based
+}
+
+// Group is a root cause: several CVE findings from one outdated product.
+type Group struct {
+	Title      string   `json:"title"`
+	Host       string   `json:"host"`
+	Port       int      `json:"port"`
+	Proto      string   `json:"proto"`
+	Product    string   `json:"product"`
+	Version    string   `json:"version"`
+	Severity   string   `json:"severity"`
+	Confidence string   `json:"confidence"` // weakest member
+	KEVCount   int      `json:"kev_count"`
+	MaxCVSS    *float64 `json:"max_cvss,omitempty"`
+	MaxEPSS    *float64 `json:"max_epss,omitempty"`
+	CVEs       []string `json:"cve_ids"`
+	Fix        string   `json:"remediation"`
 }
 
 type Coverage struct {
@@ -137,6 +169,13 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 	for i := range r.Hosts {
 		idx[r.Hosts[i].Address] = &r.Hosts[i]
 	}
+	if sess, err := st.AuditSessions(ctx, id); err == nil {
+		for _, a := range sess {
+			if h := idx[a.Address]; h != nil {
+				h.Audit = &Audit{Result: a.Result, OS: a.OSName, Kernel: a.Kernel, Ecosystem: a.Ecosystem, Packages: a.Packages, Error: a.Error}
+			}
+		}
+	}
 	for _, sv := range svcs {
 		if sv.State != "open" {
 			continue
@@ -150,6 +189,7 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 	if err != nil {
 		return nil, err
 	}
+	var shown []store.FindingRow
 	for _, f := range fs {
 		possible := f.Confidence == "tentative" && f.Severity != "info"
 		switch {
@@ -163,11 +203,18 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 		if possible && accuracy == "avoid-false-alarms" {
 			continue
 		}
+		shown = append(shown, f)
 		r.Findings = append(r.Findings, Finding{
 			Severity: f.Severity, Confidence: f.Confidence, Detection: f.Detection, Title: f.Title, Host: f.Address,
-			Port: f.Port, Proto: f.Proto, Family: f.Family, CVEs: f.CVEs, CVSS: f.CVSS, KEV: f.KEV, Synopsis: f.Synopsis,
+			Port: f.Port, Proto: f.Proto, Family: f.Family, CVEs: f.CVEs, CVSS: f.CVSS, EPSS: f.EPSS, KEV: f.KEV, Product: f.Product, Version: f.Version, Synopsis: f.Synopsis,
 			Description: f.Description, Remediation: f.Remediation, Evidence: f.Evidence, Engines: f.Engines, Possible: possible,
 		})
+	}
+
+	groups, _ := group.Build(shown)
+	for _, g := range groups {
+		r.Groups = append(r.Groups, Group{Title: g.Title, Host: g.Address, Port: g.Port, Proto: g.Proto, Product: g.Product, Version: g.Version,
+			Severity: g.Severity, Confidence: g.Confidence, KEVCount: g.KEVCount, MaxCVSS: g.MaxCVSS, MaxEPSS: g.MaxEPSS, CVEs: g.CVEs, Fix: g.Fix})
 	}
 
 	jobs, err := st.ListJobs(ctx, id)
@@ -232,6 +279,20 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 		fmt.Fprintf(&b, "> %d possible findings are hidden by the *avoid false alarms* setting; they remain stored.\n\n", r.Summary.Possible)
 	}
 
+	if len(r.Groups) > 0 {
+		fmt.Fprintf(&b, "## Priority action plan (%d root causes)\n\n", len(r.Groups))
+		b.WriteString("| Severity | Host | Root cause | KEV | Max CVSS | Confidence | Action |\n|---|---|---|---|---|---|---|\n")
+		for _, g := range r.Groups {
+			cvss := ""
+			if g.MaxCVSS != nil {
+				cvss = fmt.Sprintf("%.1f", *g.MaxCVSS)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s | %d | %s | %s | %s |\n", strings.ToUpper(g.Severity), cell(fmt.Sprintf("%s:%d", g.Host, g.Port)),
+				cell(g.Title), g.KEVCount, cvss, g.Confidence, cell(g.Fix))
+		}
+		b.WriteString("\nThe individual CVEs behind each item are listed under the findings below.\n\n")
+	}
+
 	writeSection := func(heading string, pred func(Finding) bool) {
 		var list []Finding
 		for _, f := range r.Findings {
@@ -282,6 +343,19 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 			label += " (" + h.OS + ")"
 		}
 		fmt.Fprintf(&b, "### %s\n\n", mdInline(label))
+		if a := h.Audit; a != nil {
+			fmt.Fprintf(&b, "Credentialed audit: **%s**", mdInline(a.Result))
+			if a.OS != "" {
+				fmt.Fprintf(&b, ", %s", mdInline(a.OS))
+			}
+			if a.Packages > 0 {
+				fmt.Fprintf(&b, ", %d packages inspected", a.Packages)
+			}
+			if a.Error != "" {
+				fmt.Fprintf(&b, " (%s)", mdInline(a.Error))
+			}
+			b.WriteString("\n\n")
+		}
 		if len(h.Services) == 0 {
 			b.WriteString("_No open services._\n\n")
 			continue
@@ -346,22 +420,24 @@ func fence(s string) string {
 // interpreted as formulas are neutralized.
 func WriteCSV(w io.Writer, r *Report) error {
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"severity", "confidence", "host", "port", "proto", "title", "cve_ids", "cvss", "kev", "engines", "family", "remediation"}); err != nil {
+	if err := cw.Write([]string{"severity", "confidence", "host", "port", "proto", "title", "cve_ids", "cvss", "epss", "kev", "product", "version", "engines", "family", "remediation"}); err != nil {
 		return err
 	}
-	fs := append([]Finding(nil), r.Findings...)
-	sort.SliceStable(fs, func(i, j int) bool { return rank(fs[i].Severity) > rank(fs[j].Severity) })
-	for _, f := range fs {
+	for _, f := range r.Findings { // already in priority order: KEV, confidence, CVSS, EPSS
 		cvss := ""
 		if f.CVSS != nil {
 			cvss = fmt.Sprintf("%.1f", *f.CVSS)
+		}
+		epss := ""
+		if f.EPSS != nil {
+			epss = fmt.Sprintf("%.4f", *f.EPSS)
 		}
 		port := ""
 		if f.Port != 0 {
 			port = fmt.Sprint(f.Port)
 		}
-		row := []string{f.Severity, f.Confidence, f.Host, port, f.Proto, f.Title, strings.Join(f.CVEs, " "), cvss,
-			fmt.Sprint(f.KEV), strings.Join(f.Engines, "+"), f.Family, f.Remediation}
+		row := []string{f.Severity, f.Confidence, f.Host, port, f.Proto, f.Title, strings.Join(f.CVEs, " "), cvss, epss,
+			fmt.Sprint(f.KEV), f.Product, f.Version, strings.Join(f.Engines, "+"), f.Family, f.Remediation}
 		for i := range row {
 			row[i] = csvSafe(row[i])
 		}

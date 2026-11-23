@@ -1,92 +1,54 @@
 # Babylon
 
-A local-first, open-source vulnerability and configuration scanner with Nessus-style scan policies and client-ready reports, built entirely on open data and tools.
+A free vulnerability scanner for your own network. Think Nessus, but open source, runs on your laptop, and keeps everything local.
 
-> **Status: pre-alpha (Phase 0 complete, Phase 1 in progress).** There is no usable scanner yet. What exists: the project skeleton, a safe subprocess runner, the SQLite schema with a batched single-writer, the policy/safety layer, a resumable job orchestrator, the Nmap engine with a hardened XML parser, a working `babylon scan` that finds real vulnerabilities (Nmap + Nuclei + built-in checks, merged across engines), a template index, and a measured coverage spike. See [Roadmap](#roadmap).
+Point it at IPs or a subnet. It finds hosts, open ports and software versions, looks up known vulnerabilities, and gives you a report that says what to fix first.
 
-## What it will be
+## Install
 
-One command from targets to a prioritized report:
-
-```
-babylon update-feeds
-babylon scan 10.0.0.0/22 --template basic
-babylon scan hosts.txt --template credentialed --creds creds.toml
-babylon report --format html,md,json
-```
-
-**Detection sources** (all open, all local after `update-feeds`):
-
-| Source | Role |
-|---|---|
-| Nmap + curated safe NSE | discovery, fingerprinting, TLS |
-| Nuclei + nuclei-templates | web/network CVEs, exposures, misconfigurations |
-| CPE→CVE matcher (NVD, cvelistV5, CISA Vulnrichment, KEV watch) | broad, lower-confidence version-based findings |
-| Native checks (Go + YAML) | misconfigurations CVE feeds miss (no-auth Redis, SSH algorithms, ...) |
-| Credentialed audits (SSH / WinRM) with OSV, MSRC, Apple data | authoritative, backport-aware missing-patch detection for Linux, macOS, Windows |
-| CISA KEV, EPSS | prioritization |
-
-**What makes it different**
-- **Honest confidence:** every finding is `confirmed`, `firm` or `tentative`. A version-only match never masquerades as a verified one.
-- **Root-cause grouping:** "upgrade OpenSSL, fixes 24 CVEs" instead of 24 rows.
-- **Safe by construction:** engine configs are built only from allowlists; denied categories are unreachable and covered by tests.
-- **Built for scale:** chunked, resumable scans designed for 500+ hosts.
-- **Client-ready reports:** self-contained HTML with an executive summary and branding.
-
-It does **not** use the Greenbone/OpenVAS feed or any Tenable/Nessus content (licensing), so unauthenticated plugin depth will trail those products. Credentialed scanning is where most coverage comes from. See [docs/coverage-spike.md](docs/coverage-spike.md) for measured numbers.
-
-## Try what exists
-
-Requires Go 1.27+, and `nmap` and `nuclei` on your PATH (`trivy` optional).
+You need Go 1.27+, [nmap](https://nmap.org) and [nuclei](https://github.com/projectdiscovery/nuclei). `trivy` is optional.
 
 ```
+git clone https://github.com/pwngoblin/babylon
+cd babylon
 go build -o babylon ./cmd/babylon
-./babylon doctor
-./babylon update-feeds                       # download + index Nuclei templates
-./babylon scan 192.168.1.0/24 -t basic        # discovery, ports, services, TLS, vulnerabilities
-./babylon scan --resume 3                    # resume an interrupted scan
-./babylon serve                              # local web UI: configure, start and track scans
-./babylon scans list                         # stored scan history
-./babylon scans export 3 --format md         # report (md, json, csv)
-./babylon scans diff 2 3                     # new vs. not-seen findings
-go test ./...          # add -short to skip the 3,000-job scale test
+./babylon doctor          # checks your tools
+./babylon update-feeds    # downloads vulnerability data (first run is slow, ~30 min)
 ```
 
-### Web UI
-
-`babylon serve` starts a local web interface (default `127.0.0.1:8834`) with a Nessus-style workflow: pick a template, enter targets, start the scan, watch live progress, then browse findings, hosts and coverage, compare scans, and export reports. It prints a URL with a one-time access token. Access is limited to your machine: loopback only, a token-for-cookie sign-in, Host-header and CSRF checks, and a strict Content-Security-Policy. Stopping the server pauses running scans so they can be resumed.
-
-All results are stored in a local SQLite database (`~/.babylon/babylon.db`) and are kept until you delete them.
-
-### Test lab (optional)
-
-`deploy/lab/` has deliberately vulnerable containers for measuring coverage. They bind to `127.0.0.1` only.
+## Use
 
 ```
-docker compose -f deploy/lab/docker-compose.yml up -d
+./babylon scan 192.168.1.0/24                 # scan a network
+./babylon scan 10.0.0.5 --timing fast-lan     # quicker, for local networks
+./babylon scan 10.0.0.5 --deep                # run every safe check (finds more, much slower)
+./babylon serve                               # web UI (open the link it prints)
+./babylon scans list                          # past scans
+./babylon scans export 3 --format html -o report.html    # also: md, json, csv, pdf
 ```
 
-**Never expose the lab to a network.**
+Scan a Linux server **with a login** for much better results (finds missing patches exactly, plus config problems):
 
-## Documentation
+```
+export PW='your-ssh-password'
+./babylon scan 10.0.0.5 -t credentialed --ssh-user audit --ssh-password-env PW --trust-new-hosts
+```
 
-- [PRODUCT.md](PRODUCT.md): goals, non-goals, templates, decisions log
-- [ARCHITECTURE.md](ARCHITECTURE.md): pipeline, engines, SQLite schema, safety model, risks
-- [docs/nessus-methodology.md](docs/nessus-methodology.md): researched how Nessus finds vulnerabilities and how Babylon maps to it
-- [docs/coverage-spike.md](docs/coverage-spike.md): Phase 0 measurements and what they changed
-- [CLAUDE.md](CLAUDE.md): project brief used to guide development
+## What it does
 
-## Roadmap
+- **Finds** hosts, ports, services and TLS problems (Nmap).
+- **Checks** web apps and services for known CVEs and misconfigurations (Nuclei plus its own checks).
+- **Matches** software versions to CVEs (NVD), and marks how sure it is: `confirmed`, `firm` or `tentative`.
+- **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and check settings like `sshd_config`.
+- **Ranks** results by actively exploited (CISA KEV), severity and exploit likelihood (EPSS).
+- **Groups** results: "upgrade OpenSSL, fixes 24 CVEs" instead of 24 separate rows.
 
-1. **Phase 0 (done):** skeleton, runner, schema, lab, coverage and NVD-ingest spikes.
-2. **Phase 1 (in progress):** policy and safety (done), orchestrator with chunking, retries and resume (done), Nmap engine and `babylon scan` (done), Nuclei engine with service-aware template selection (done), native Nessus-style checks (done), local web UI and persistent scan history (done), CPE matcher, feeds, correlation, HTML/Markdown/JSON reports.
-3. **Phase 2:** credentialed audits (Linux, containers, macOS, Windows), root-cause grouping, scan diffing, hardening checks.
-4. **Phase 3:** more native checks, `.nessus` import/export, remote agents, scheduling.
+## Good to know
 
-## Responsible use
+- Safe by default: no exploits, no denial-of-service. Intrusive checks need explicit flags.
+- Public IP addresses are refused unless you add `--i-have-authorization`. Only scan what you own or may test.
+- Everything is stored in `~/.babylon/babylon.db`. Passwords are never saved.
+- It does not use Nessus or OpenVAS/Greenbone vulnerability content (licensing), so it will not match them on every check.
+- Early software. Expect rough edges.
 
-Scan only systems you own or are explicitly authorized to test. Babylon refuses public address ranges unless you pass an explicit authorization flag, runs non-destructive checks only, and keeps anything more intrusive behind opt-in flags. You are responsible for how you use it.
-
-## License
-
-[Apache-2.0](LICENSE). Nmap, Nuclei and Trivy are separate programs invoked as subprocesses under their own licences.
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [roadmap status](docs/roadmap/STATUS.md) · License: Apache-2.0

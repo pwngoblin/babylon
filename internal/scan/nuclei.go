@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"babylon/internal/intel"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -45,7 +47,9 @@ type nucleiRuntime struct {
 }
 
 func newNucleiRuntime(st *store.Store, res *policy.Resolved, opt Options) *nucleiRuntime {
-	return &nucleiRuntime{st: st, res: res, dir: opt.NucleiDir, profile: nuclei.ProfileFor(res.Template.Name),
+	prof := nuclei.ProfileFor(res.Template.Name)
+	prof.AllSafe = res.Flags.Deep
+	return &nucleiRuntime{st: st, res: res, dir: opt.NucleiDir, profile: prof,
 		rate: opt.NucleiRate, timeout: opt.NucleiTimeout}
 }
 
@@ -317,6 +321,15 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 			if err := n.st.RecordFinding(bg, job.ScanID, res.Finding); err != nil {
 				return err
 			}
+			if cpe := n.versionCPE(ctx, res); cpe != "" {
+				aid, err := n.st.AssetID(bg, res.Finding.Address)
+				if err != nil {
+					return err
+				}
+				if err := n.st.MergeKBList(bg, job.ScanID, aid, webCPEKey(res.HostPort), []string{cpe}, "nuclei"); err != nil {
+					return err
+				}
+			}
 			if detect {
 				if toks := nuclei.TechTokens(res.Tags); len(toks) > 0 {
 					aid, err := n.st.AssetID(bg, res.Finding.Address)
@@ -336,4 +349,49 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 		return orchestrator.Permanent(runErr)
 	}
 	return runErr
+}
+
+// webCPEKey is the knowledge-base key holding product CPEs (with versions)
+// learned from web responses on one "ip:port".
+func webCPEKey(hostPort string) string { return "Web/" + hostPort + "/cpe" }
+
+var versionLike = regexp.MustCompile(`^v?(\d+(?:\.\d+){1,3}(?:[-_.]?(?:p|rc|beta|alpha)?\d+)?[a-z]?)$`)
+
+// versionCPE turns a detection result into a CPE 2.3 string when the template
+// extracted a version and names the product (via its own CPE or index
+// metadata). The result feeds the same CVE matcher as Nmap's service versions,
+// so web applications, frameworks and servers are covered, not just daemons.
+func (n *nucleiRuntime) versionCPE(ctx context.Context, res nuclei.Result) string {
+	var ver string
+	for _, e := range res.Extracted {
+		if m := versionLike.FindStringSubmatch(strings.TrimSpace(e)); m != nil {
+			ver = m[1]
+			break
+		}
+	}
+	if ver == "" {
+		return ""
+	}
+	vendor, product := "", ""
+	if c, ok := intel.ParseCPE(res.CPE); ok {
+		vendor, product = c.Vendor, c.Product
+	}
+	if product == "" {
+		if ix, err := n.index(ctx); err == nil {
+			vendor, product = ix.VendorProduct(res.TemplateID)
+		}
+	}
+	if vendor == "" || product == "" || !productNamed(product, res.TemplateID+" "+res.Finding.Title) {
+		return ""
+	}
+	return fmt.Sprintf("cpe:2.3:a:%s:%s:%s:*:*:*:*:*:*:*", vendor, product, ver)
+}
+
+// productNamed guards against template metadata that names an unrelated
+// product: the CPE product must appear in the template's own id or title.
+func productNamed(product, text string) bool {
+	norm := func(s string) string {
+		return strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(s))
+	}
+	return strings.Contains(norm(text), norm(product))
 }

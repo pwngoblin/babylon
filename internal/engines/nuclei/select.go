@@ -15,6 +15,7 @@ type Index struct {
 	tpls    []store.NucleiTemplate
 	byTag   map[string][]int
 	byProd  map[string][]int
+	byID    map[string]int
 	Removed int // templates dropped by the safety filter
 }
 
@@ -24,7 +25,7 @@ var unsupportedProtocols = map[string]bool{"workflow": true, "file": true, "dns"
 // NewIndex applies the policy's exclusions (tags and protocols) and builds
 // lookup tables.
 func NewIndex(all []store.NucleiTemplate, cfg policy.NucleiConfig) *Index {
-	ix := &Index{byTag: map[string][]int{}, byProd: map[string][]int{}}
+	ix := &Index{byTag: map[string][]int{}, byProd: map[string][]int{}, byID: map[string]int{}}
 	denyTag := toSet(cfg.ExcludeTags)
 	denyProto := toSet(cfg.ExcludeProtocols)
 	for _, t := range all {
@@ -34,6 +35,7 @@ func NewIndex(all []store.NucleiTemplate, cfg policy.NucleiConfig) *Index {
 		}
 		i := len(ix.tpls)
 		ix.tpls = append(ix.tpls, t)
+		ix.byID[t.ID] = i
 		for _, tag := range t.Tags {
 			ix.byTag[tag] = append(ix.byTag[tag], i)
 		}
@@ -52,6 +54,7 @@ type Profile struct {
 	GenericTags []string // generic web tags to run against every HTTP target
 	MinSeverity string   // minimum severity for generic templates
 	DetectTags  []string // tags of the cheap technology-detection phase
+	AllSafe     bool     // deep mode: run every policy-allowed template for the protocol, not only tech-matched ones
 }
 
 // ProfileFor returns the generic-check profile for a template name.
@@ -103,6 +106,13 @@ func (ix *Index) ForTokens(proto string, tokens []string, p Profile) []string {
 			}
 		}
 		for _, i := range ix.byProd[tok] {
+			if wantProto(ix.tpls[i]) {
+				set[i] = true
+			}
+		}
+	}
+	if p.AllSafe {
+		for i := range ix.tpls {
 			if wantProto(ix.tpls[i]) {
 				set[i] = true
 			}
@@ -223,4 +233,12 @@ func TokensForService(name, product string, cpes []string) []string {
 	}
 	add(name)
 	return out
+}
+
+// VendorProduct returns the CPE vendor and product a template declares.
+func (ix *Index) VendorProduct(id string) (vendor, product string) {
+	if i, ok := ix.byID[id]; ok {
+		return ix.tpls[i].Vendor, ix.tpls[i].Product
+	}
+	return "", ""
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"babylon/internal/report"
 	"babylon/internal/runner"
 )
 
@@ -48,6 +49,11 @@ func newDoctorCmd() *cobra.Command {
 					}
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "[%s] %-7s %s (%s)\n", mark, t.name, status, t.why)
+			}
+			if rd := report.FindPDFRenderer(); rd != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "[ok  ] pdf     %s (PDF report export)\n", rd.Name)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "[warn] pdf     no Chrome/Chromium/weasyprint found (PDF export unavailable; HTML still works)\n")
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "[info] privileges: %s\n", privilegeNote())
 			if failed {

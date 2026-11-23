@@ -43,6 +43,9 @@ type Result struct {
 	Tags          []string // template tags (used to learn technologies)
 	Informational bool
 	HostPort      string // "ip:port" key for knowledge-base facts
+	TemplateID    string
+	CPE           string   // product CPE the template declares ("" if none)
+	Extracted     []string // values extractors pulled out (often a version)
 }
 
 type rawResult struct {
@@ -59,6 +62,7 @@ type rawResult struct {
 			CVSS   float64  `json:"cvss-score"`
 			Metric string   `json:"cvss-metrics"`
 			EPSS   float64  `json:"epss-score"`
+			CPE    string   `json:"cpe"`
 		} `json:"classification"`
 	} `json:"info"`
 	Type          string   `json:"type"`
@@ -152,7 +156,7 @@ func ParseLine(line []byte, rawRef string) (Result, error) {
 
 	return Result{
 		Finding: f, Tags: tags, Informational: sev == "info",
-		HostPort: addr + ":" + r.Port,
+		HostPort: addr + ":" + r.Port, TemplateID: r.TemplateID, CPE: r.Info.Classification.CPE, Extracted: r.Extracted,
 	}, nil
 }
 
