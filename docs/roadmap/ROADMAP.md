@@ -6,7 +6,7 @@ Rule for every item: non-destructive by default, opt-in flags for anything intru
 
 ## Next
 
-1. **More native checks (target 100; ~30 done).** Still open: SMB signing and null sessions, LDAP signing/anonymous bind, SSH weak algorithms (unauthenticated), MongoDB/Memcached/RabbitMQ exposure, NTP/DNS misconfig, IPMI, IKE aggressive mode, TFTP. Each with a mock-listener test.
+1. **More native checks (target 100; ~36 done).** Still open: SMB null sessions and share listing (needs an SMB client), LDAP signing requirement, IKE aggressive mode (needs a valid group id, not reliably detectable blind), RabbitMQ/AMQP checks, more databases and brokers (Cassandra, Kafka, Hadoop HDFS), DNS zone transfer, SSDP/UPnP, printers (JetDirect/IPP). Each with a mock-listener test.
 2. **macOS audit.** Patch level and Homebrew packages against advisory data, plus hardening checks.
 3. **Notifications and integrations.** Webhook/email on new critical or KEV finding; export to SARIF, Jira/GitHub issues; `.nessus` import (export is built).
 4. **CI and releases.** GitHub Actions for build and test (Linux, macOS, Windows), `govulncheck`, `staticcheck`, and tagged releases with checksums, SBOM and signatures.

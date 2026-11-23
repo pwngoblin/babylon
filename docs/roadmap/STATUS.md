@@ -56,6 +56,9 @@ All native, mock-tested, read-only. Probe-level ones need `--allow-active`.
 ## Exploit availability (2026-11-23)
 Feeds `exploitdb` (files_exploits.csv) and `metasploit` (modules_metadata_base.json, exploit modules only) store CVE-to-exploit ids in `exploit_ref` (migration 8; table existed from 0001). Findings carry `exploit_sources`, refreshed on every feed update and on record. Ranking: KEV, confidence, public exploit, CVSS, EPSS. Shown in the web UI (badge), HTML/MD/CSV/JSON (`public_exploits`) and `.nessus` (`exploit_available`, `exploit_framework_metasploit`). Metadata only, no exploit code is downloaded. 
 
+## Protocol probes (2026-11-23)
+New in `internal/native/proto.go`, all read-only and `--allow-active`, mock-tested only: LDAP anonymous bind plus a one-entry base read of the first naming context (`ldap-anonymous`), TFTP read request for a nonexistent file (`tftp-open`), NTP mode 6 READVAR (`ntp-mode6`), IPMI 2.0 Open Session with cipher suite 3 (hash disclosure, CVE-2013-4786) and cipher suite 0 (`ipmi-cipher-zero`; no authentication exchange follows), Erlang EPMD names request (`epmd-exposed`). UDP probes run directly (no root needed). Not built: SMB null sessions, IKE aggressive mode, RabbitMQ.
+
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
 - No Greenbone/OpenVAS or Tenable content. Non-destructive checks only. Credentials come from env vars per scan and are never stored.
