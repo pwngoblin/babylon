@@ -18,6 +18,10 @@ go build -o babylon ./cmd/babylon
 
 ## Use
 
+**No command line needed for scanning:** run `./babylon serve`, open the link it prints, and start, watch, compare and export scans from the browser. It only listens on your own machine. (Credentialed SSH scans are still CLI-only for now.)
+
+Or use the CLI:
+
 ```
 ./babylon scan 192.168.1.0/24                 # scan a network
 ./babylon scan 10.0.0.5 --timing fast-lan     # quicker, for local networks
@@ -41,6 +45,7 @@ export PW='your-ssh-password'
 - **Matches** software versions to CVEs (NVD), and marks how sure it is: `confirmed`, `firm` or `tentative`.
 - **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and check settings like `sshd_config`.
 - **Ranks** results by actively exploited (CISA KEV), severity and exploit likelihood (EPSS).
+- **Shows** results in a local web UI with filters and sortable columns.
 - **Groups** results: "upgrade OpenSSL, fixes 24 CVEs" instead of 24 separate rows.
 
 ## Good to know
@@ -52,4 +57,4 @@ export PW='your-ssh-password'
 - It does not use Nessus or OpenVAS/Greenbone vulnerability content (licensing), so it will not match them on every check.
 - Early software. Expect rough edges.
 
-More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [roadmap status](docs/roadmap/STATUS.md) · License: Apache-2.0
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [status](docs/roadmap/STATUS.md) · [roadmap](docs/roadmap/ROADMAP.md) · License: Apache-2.0

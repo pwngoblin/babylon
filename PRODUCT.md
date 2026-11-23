@@ -70,6 +70,8 @@ Always denied: DoS, destructive, intrusive NSE/Nuclei categories. Default-creden
 
 ## 7. Scope by phase
 
+> Status (2026-11-23): Phase 1 and the Linux part of Phase 2 are built and released as v0.1.0. Next steps are in `docs/roadmap/ROADMAP.md`.
+
 - **Phase 0 (spike)**: lab + expected-findings manifest; measure coverage and CPE false-positive rate per source; go/no-go per source.
 - **Phase 1 (MVP)**: policy/safety, scalable orchestrator, Nmap + Nuclei + native checks + CPE→CVE, feeds, correlation/dedupe, **HTML/MD/JSON reports with exec summary + branding**.
 - **Phase 2**: credentialed audits (Linux → containers/Alpine → macOS → Windows), root-cause grouping, diff/trend, hardening packs.

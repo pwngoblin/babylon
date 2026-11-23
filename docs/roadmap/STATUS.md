@@ -1,6 +1,39 @@
 # Roadmap status (resume file)
 
-Last updated: 2026-11-23. Nothing below is committed yet (working tree has uncommitted changes on `main`, last commit f5736cf).
+Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/releases/tag/v0.1.0). Everything below is committed on `main` (8ee4453). The forward-looking plan is in [ROADMAP.md](ROADMAP.md).
+
+## At a glance
+
+| Area | State |
+|---|---|
+| Discovery, ports, services, TLS (Nmap + safe NSE) | done |
+| Nuclei checks (+ `--deep`), native checks, active API probes (`--allow-active`) | done |
+| CPE to CVE matching (NVD + cvelistV5, KEV, EPSS, backport-aware, web tech versions, KEV product watch) | done |
+| Credentialed Linux audit over SSH (OSV, config rules) | done; RHEL family unit-tested only |
+| UDP stage (17 ports, needs root) | done, unit-tested only |
+| Root-cause grouping, confidence tiers, priority sort | done |
+| Reports: MD, JSON, CSV, HTML, PDF | done |
+| Web UI, usable without the CLI for unauthenticated scans (loopback, token, CSRF, sortable findings, compare, export) | done |
+| Scope allow-list (`~/.babylon/scope.txt`) | done |
+| Timing profiles (standard, fast-lan, polite) | done |
+| Windows build | compiles, never run |
+| WinRM audit, macOS advisories, web-app scanning, exploit tags | not built (see ROADMAP.md) |
+
+## Added after the M01-M04 work (2026-11-23)
+- Findings table sorting in the web UI (click a header: natural order, reverse, default).
+- Scope allow-list: `internal/app/scope.go`. If `scope.txt` exists, targets outside it are refused; a malformed file refuses everything.
+- Nuclei targets drop default ports (`http://host`, not `http://host:80`).
+- UI fix: a pending scan returned `jobs: null` and crashed the page; server now sends `[]` and the page tolerates it.
+- Bug fix: cancelling a scan before the orchestrator started marked it `failed`; now `cancelled` (also fixed a flaky `TestConcurrentScanLimit`).
+- Quality check on the lab (127.0.0.1 only, 7 services, full_unauth + allow-active, fast-lan): 314 findings in 2m18s. Found Apache 2.4.49 (88 CVEs incl. CVE-2021-41773), OpenSSH 8.4 (39), nginx 1.16.0 (10), Redis 5.0.14 (23) + unauthenticated access, vsftpd, DVWA setup page. Misses: SQLi/XSS in DVWA and Juice Shop (no web-app mode).
+- Release v0.1.0: binaries for macOS arm64/amd64, Linux amd64/arm64, Windows amd64 + SHA256SUMS. Only macOS arm64 was run.
+- Not run: govulncheck, staticcheck, gosec (not installed on the dev machine).
+
+## Standing rules
+- Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
+- No Greenbone/OpenVAS or Tenable content. Non-destructive checks only. Credentials come from env vars per scan and are never stored.
+
+## History (older milestone notes)
 
 ## Milestone 01: feeds + CPE→CVE matcher: DONE except browser check + commit
 
@@ -24,8 +57,8 @@ Last updated: 2026-11-23. Nothing below is committed yet (working tree has uncom
 Full NVD sync finished (411,297 CVEs, 2.5M ranges). Lab scan with `babylon scan 127.0.0.1 --ports 18081,18082,16379,12121,12222`: Apache 2.4.49 → 88 CVEs (3 KEV), OpenSSH 8.4 → 35, nginx 1.16.0 → 10, Redis 5.0.14 → 20, vsftpd 3.0.2 → 2, all grouped, firm (no distro banner, unprivileged so no OS), with CVSS/KEV/fix version. Backported banners are tentative + caveat (unit tests). The live scan found one miss (Nmap names vsftpd `vsftpd:vsftpd`, NVD `vsftpd_project`); alias added with test.
 
 ### Remaining for M01 (small)
-1. Browser-check the new UI section (Playwright) on scan with grouped findings.
-2. Commit and push (nothing is committed yet).
+1. (done: UI checked in the browser)
+2. (done: committed and released in v0.1.0)
 3. Optional: record feed versions in `scan.feed_versions_json`; KEV-watch and cvelistV5 not built.
 
 Known gaps / honest notes: NVD CPE coverage of 2026 CVEs is poor (cvelistV5/Vulnrichment merge not built); unbounded "all versions" NVD entries are skipped and counted; OSV data is ingested but not used for matching until M02; NVD ingest is per-page transactions (resumable), KEV/EPSS/OSV are single transactions.

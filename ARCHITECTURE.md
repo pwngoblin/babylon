@@ -392,6 +392,8 @@ Raw engine output is on disk; credentials are never stored in the DB.
 
 ## 10. Implementation plan
 
+> Status (2026-11-23): see `docs/roadmap/STATUS.md`. Built: phase 1, Linux credentialed audits, UDP stage, active API probes, cvelistV5 feed, KEV watch, timing profiles, scope allow-list. Not built: macOS/Windows audits, web-app mode, exploit tags. Also note the credentials section below describes the target design; today credentials come from env vars per scan and are never stored.
+
 **Phase 0: Spike (≈1 week), de-risk coverage**
 - Build a lab (Metasploitable-class, DVWA, several unpatched distro VMs/containers) with an **expected-findings manifest**.
 - Measure what Nmap NSE + Nuclei + CPE matcher find vs. the manifest; measure CPE-match false-positive rate; confirm NVD bulk ingest `[VERIFY]` and Apple/MSRC feasibility. Output `docs/coverage-spike.md` with baseline numbers and go/no-go on each source.
