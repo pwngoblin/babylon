@@ -91,6 +91,7 @@ type Finding struct {
 	Title       string
 	Severity    string
 	CVSS        *float64
+	CVEs        []string
 	Synopsis    string
 	Description string
 	Remediation string
@@ -220,7 +221,7 @@ func toModel(c Check, env *Env, f Finding) model.Finding {
 	return model.Finding{
 		Fingerprint: correlate.Fingerprint(env.Address, f.Port, proto, nil, correlate.CheckKey("native", c.ID)),
 		Address:     env.Address, Port: f.Port, Proto: proto,
-		Title: f.Title, Family: c.Family, Severity: f.Severity, CVSS: f.CVSS,
+		Title: f.Title, Family: c.Family, Severity: f.Severity, CVSS: f.CVSS, CVEs: f.CVEs,
 		Synopsis: f.Synopsis, Description: f.Description, Remediation: f.Remediation,
 		Solution: solution(f.Remediation), Confidence: conf, Detection: det,
 		Engine: "native", EngineRef: c.ID, Evidence: correlate.Redact(f.Evidence),

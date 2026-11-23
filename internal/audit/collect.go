@@ -26,11 +26,14 @@ const (
 	cmdSS        = `ss -tulpn 2>/dev/null || ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null`
 	cmdStat      = `stat -c '%a %U %G %n' /etc/passwd /etc/shadow /etc/sudoers /etc/ssh/sshd_config 2>/dev/null`
 	cmdSysctl    = `sysctl net.ipv4.ip_forward kernel.dmesg_restrict kernel.kptr_restrict 2>/dev/null`
+	// cmdDocker prints the Docker server version, then one line per running
+	// container describing how it is isolated. It only reads container metadata.
+	cmdDocker = `docker info --format '{{.ServerVersion}}' 2>/dev/null && docker ps -q 2>/dev/null | xargs -r docker inspect --format '{{.Name}}|{{.Config.Image}}|{{.HostConfig.Privileged}}|{{.HostConfig.NetworkMode}}|{{.HostConfig.PidMode}}|{{.Config.User}}|{{range .Mounts}}{{.Source}}:{{.Destination}},{{end}}|{{.HostConfig.CapAdd}}' 2>/dev/null`
 )
 
 func init() {
 	allow(cmdOSRelease, cmdUname, cmdDpkg, cmdRPM, cmdAPK, cmdSwVers, cmdBrew, cmdSSHDT, cmdSSHDConf,
-		cmdUFW, cmdFirewalld, cmdIPTables, cmdNft, cmdSS, cmdStat, cmdSysctl)
+		cmdUFW, cmdFirewalld, cmdIPTables, cmdNft, cmdSS, cmdStat, cmdSysctl, cmdDocker)
 }
 
 // AllowedCommands exposes the allowlist for tests and documentation.
@@ -107,6 +110,7 @@ func Collect(ctx context.Context, r Runner) (*Facts, error) {
 	f.Listening = ParseSS(run(cmdSS))
 	f.Files = ParseStat(run(cmdStat))
 	f.Sysctl = ParseSysctl(run(cmdSysctl))
+	f.Docker = ParseDocker(run(cmdDocker))
 
 	if f.OS.ID == "" && len(f.Packages) == 0 {
 		return f, fmt.Errorf("host returned no OS information or packages; commands may be restricted for this account")

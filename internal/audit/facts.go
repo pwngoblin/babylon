@@ -21,7 +21,8 @@ type Facts struct {
 	Listening []Socket
 	Files     []FileInfo
 	Sysctl    map[string]string
-	Errors    []string // collection steps that failed (reported, never fatal)
+	Docker    *DockerInfo // nil when Docker is absent or not accessible to the audit account
+	Errors    []string    // collection steps that failed (reported, never fatal)
 }
 
 type OSInfo struct {
@@ -357,4 +358,45 @@ func isNum(s string) bool {
 		}
 	}
 	return s != ""
+}
+
+// DockerInfo is the isolation-relevant metadata of running containers.
+type DockerInfo struct {
+	Version    string
+	Containers []Container
+}
+
+type Container struct {
+	Name, Image, Network, PidMode, User string
+	Privileged                          bool
+	Mounts                              []string // source:destination
+	CapAdd                              []string
+}
+
+// ParseDocker parses cmdDocker output; it returns nil unless the first line looks
+// like a Docker server version (so a missing or inaccessible Docker is "unknown").
+func ParseDocker(s string) *DockerInfo {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" || strings.Contains(lines[0], "|") || !isNum(string(strings.TrimSpace(lines[0])[0])) {
+		return nil
+	}
+	d := &DockerInfo{Version: strings.TrimSpace(lines[0])}
+	for _, l := range lines[1:] {
+		p := strings.Split(strings.TrimSpace(l), "|")
+		if len(p) < 8 {
+			continue
+		}
+		c := Container{Name: strings.TrimPrefix(p[0], "/"), Image: p[1], Privileged: p[2] == "true", Network: p[3], PidMode: p[4], User: p[5]}
+		for _, m := range strings.Split(p[6], ",") {
+			if m != "" {
+				c.Mounts = append(c.Mounts, m)
+			}
+		}
+		caps := strings.Trim(p[7], "[] ")
+		if caps != "" && caps != "<nil>" {
+			c.CapAdd = strings.Fields(caps)
+		}
+		d.Containers = append(d.Containers, c)
+	}
+	return d
 }

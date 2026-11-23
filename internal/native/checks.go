@@ -29,6 +29,7 @@ func Builtin() []Check {
 		sshWeakAlgorithms, redisUnauth, ftpAnonymous, smbSigning, smbv1, memcachedOpen, mongodbOpen,
 		x11Open, nfsExports, dnsRecursion, snmpPublic, vncNoAuth, telnetService, httpTrace, tlsWeakness,
 	}
+	base = append(base, windowsChecks()...)
 	return append(base, probeChecks()...)
 }
 

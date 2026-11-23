@@ -200,6 +200,7 @@ func infraChecks() []Check {
 	for _, p := range infraAPIProbes {
 		out = append(out, probeCheck(p))
 	}
+	out = append(out, snmpProbe, tlsProbe, mysqlProbe, postgresProbe)
 	return append(out,
 		tcpCheck("mqtt-anonymous", "MQTT broker allows anonymous clients", []int{1883}, mqttRun),
 		tcpCheck("zookeeper-open", "ZooKeeper answers unauthenticated commands", []int{2181}, zookeeperRun),

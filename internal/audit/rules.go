@@ -52,6 +52,106 @@ var Rules = []Rule{
 		Synopsis: "sysctl values weaken kernel information-leak or routing protections.", Eval: ruleKernel},
 	{ID: "SVC-001", Title: "Sensitive service listens on all network interfaces", Severity: "medium",
 		Synopsis: "A database, cache or container API is bound to a non-loopback address.", Eval: ruleExposedServices},
+	{ID: "DOCKER-001", Title: "Privileged container running", Severity: "high",
+		Synopsis: "A container runs with --privileged, which removes most isolation from the host.", Eval: ruleDockerPrivileged},
+	{ID: "DOCKER-002", Title: "Container has the Docker socket mounted", Severity: "high",
+		Synopsis: "Access to docker.sock is equivalent to root on the host.", Eval: ruleDockerSocket},
+	{ID: "DOCKER-003", Title: "Container shares a host namespace or sensitive host path", Severity: "medium",
+		Synopsis: "Host network/PID namespace or a sensitive host directory is shared with a container.", Eval: ruleDockerHostShare},
+	{ID: "DOCKER-004", Title: "Container has dangerous Linux capabilities added", Severity: "high",
+		Synopsis: "Capabilities such as SYS_ADMIN or SYS_PTRACE allow container escape.", Eval: ruleDockerCaps},
+	{ID: "DOCKER-005", Title: "Containers run as root", Severity: "low",
+		Synopsis: "Processes in a container run as uid 0, so a breakout starts with root privileges.", Eval: ruleDockerRoot},
+}
+
+func dockerUnknown() Result {
+	return Result{Status: Unknown, Reason: "Docker is not installed or the audit account cannot access it (needs the docker group or root)"}
+}
+
+func dockerEach(f *Facts, bad func(Container) string, fix string) Result {
+	if f.Docker == nil {
+		return dockerUnknown()
+	}
+	var hits []string
+	for _, c := range f.Docker.Containers {
+		if why := bad(c); why != "" {
+			hits = append(hits, fmt.Sprintf("%s (%s): %s", c.Name, c.Image, why))
+		}
+	}
+	if len(hits) == 0 {
+		return Result{Status: Pass, Evidence: fmt.Sprintf("%d running container(s) checked", len(f.Docker.Containers))}
+	}
+	sort.Strings(hits)
+	return Result{Status: Fail, Evidence: strings.Join(hits, "\n"), Remediation: fix}
+}
+
+func ruleDockerPrivileged(f *Facts) Result {
+	return dockerEach(f, func(c Container) string {
+		if c.Privileged {
+			return "runs with --privileged"
+		}
+		return ""
+	}, "Remove --privileged; grant only the specific capabilities and devices the workload needs.")
+}
+
+func ruleDockerSocket(f *Facts) Result {
+	return dockerEach(f, func(c Container) string {
+		for _, m := range c.Mounts {
+			if strings.HasPrefix(m, "/var/run/docker.sock:") || strings.HasPrefix(m, "/run/docker.sock:") {
+				return "mounts " + m
+			}
+		}
+		return ""
+	}, "Do not mount docker.sock into containers; use a restricted socket proxy if API access is unavoidable.")
+}
+
+var sensitiveMountSources = []string{"/", "/etc", "/root", "/proc", "/sys", "/boot", "/var/lib/docker", "/var/run"}
+
+func ruleDockerHostShare(f *Facts) Result {
+	return dockerEach(f, func(c Container) string {
+		var why []string
+		if c.Network == "host" {
+			why = append(why, "host network")
+		}
+		if c.PidMode == "host" {
+			why = append(why, "host PID namespace")
+		}
+		for _, m := range c.Mounts {
+			src, _, _ := strings.Cut(m, ":")
+			for _, s := range sensitiveMountSources {
+				if src == s {
+					why = append(why, "mounts host "+src)
+				}
+			}
+		}
+		return strings.Join(why, ", ")
+	}, "Use bridge networking, avoid host PID, and mount only the specific directories a container needs (read-only where possible).")
+}
+
+var dangerousCaps = map[string]bool{"SYS_ADMIN": true, "SYS_PTRACE": true, "SYS_MODULE": true, "DAC_READ_SEARCH": true, "ALL": true, "NET_ADMIN": false}
+
+func ruleDockerCaps(f *Facts) Result {
+	return dockerEach(f, func(c Container) string {
+		var bad []string
+		for _, cp := range c.CapAdd {
+			if dangerousCaps[strings.TrimPrefix(strings.ToUpper(cp), "CAP_")] {
+				bad = append(bad, cp)
+			}
+		}
+		if len(bad) > 0 {
+			return "adds " + strings.Join(bad, ", ")
+		}
+		return ""
+	}, "Drop all capabilities (--cap-drop=ALL) and add back only what is required.")
+}
+
+func ruleDockerRoot(f *Facts) Result {
+	return dockerEach(f, func(c Container) string {
+		if c.User == "" || c.User == "root" || c.User == "0" {
+			return "no non-root USER set"
+		}
+		return ""
+	}, "Set a non-root USER in the image or run with --user.")
 }
 
 func sshdVal(f *Facts, key, def string) (string, bool) {

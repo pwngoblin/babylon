@@ -165,6 +165,7 @@ func TestRules(t *testing.T) {
 		Firewall:  Firewall{Known: true, Active: true, Tool: "ufw"},
 		Sysctl:    map[string]string{"kernel.dmesg_restrict": "1", "kernel.kptr_restrict": "2", "net.ipv4.ip_forward": "0"},
 		Listening: []Socket{{Proto: "tcp", Addr: "0.0.0.0", Port: 22}, {Proto: "tcp", Addr: "127.0.0.1", Port: 6379}},
+		Docker:    ParseDocker("24.0.7\n/db|postgres:16|false|bridge||postgres|/data:/var/lib/pg,|[]\n"),
 	}
 	for _, r := range Rules {
 		if res := r.Eval(good); res.Status != Pass {
@@ -177,6 +178,7 @@ func TestRules(t *testing.T) {
 		Firewall:  Firewall{Known: true, Tool: "ufw"},
 		Sysctl:    map[string]string{"kernel.dmesg_restrict": "0", "net.ipv4.ip_forward": "1"},
 		Listening: []Socket{{Proto: "tcp", Addr: "0.0.0.0", Port: 6379, Process: "redis"}, {Proto: "tcp", Addr: "::", Port: 2375}},
+		Docker:    ParseDocker(dockerSample),
 	}
 	for _, r := range Rules {
 		res := r.Eval(bad)
@@ -210,6 +212,9 @@ func TestAllowlistIsReadOnly(t *testing.T) {
 		"brew": true, "sshd": true, "/usr/sbin/sshd": true, "ufw": true, "firewall-cmd": true, "iptables": true,
 		"nft": true, "ss": true, "netstat": true, "stat": true, "sysctl": true}
 	for _, c := range AllowedCommands() {
+		if c == cmdDocker {
+			continue // the one command with a pipe; checked by TestDockerCommandIsAllowlistedAndReadOnly
+		}
 		if strings.ContainsAny(strings.ReplaceAll(c, "2>/dev/null", ""), ">;&`$(") && !strings.Contains(c, "${") {
 			t.Errorf("command %q has shell metacharacters beyond ||, quoting and discarded stderr", c)
 		}
@@ -263,5 +268,66 @@ func TestCollect(t *testing.T) {
 	}
 	if _, err := Collect(context.Background(), fakeRunner{}); err == nil {
 		t.Error("a host that returns nothing must be an error, not an empty success")
+	}
+}
+
+const dockerSample = `24.0.7
+/web|nginx:1.25|false|bridge||101|/srv/www:/usr/share/nginx/html,|[]
+/agent|portainer/agent|true|host|host||/var/run/docker.sock:/var/run/docker.sock,/:/host,|[SYS_ADMIN NET_ADMIN]
+/db|postgres:16|false|bridge||postgres|/var/lib/pg:/var/lib/postgresql/data,|<nil>
+`
+
+func TestParseDockerAndRules(t *testing.T) {
+	d := ParseDocker(dockerSample)
+	if d == nil || d.Version != "24.0.7" || len(d.Containers) != 3 {
+		t.Fatalf("parse: %+v", d)
+	}
+	f := &Facts{Docker: d}
+	want := map[string]Status{"DOCKER-001": Fail, "DOCKER-002": Fail, "DOCKER-003": Fail, "DOCKER-004": Fail, "DOCKER-005": Fail}
+	for _, r := range Rules {
+		if w, ok := want[r.ID]; ok {
+			res := r.Eval(f)
+			if res.Status != w {
+				t.Errorf("%s = %s (%s)", r.ID, res.Status, res.Evidence)
+			}
+			if strings.Contains(res.Evidence, "/web ") || strings.Contains(res.Evidence, "web (nginx") && r.ID != "DOCKER-005" {
+				t.Errorf("%s flagged the benign container: %s", r.ID, res.Evidence)
+			}
+		}
+	}
+	// A clean Docker host passes; no Docker access is unknown, never a pass.
+	clean := &Facts{Docker: ParseDocker("24.0.7\n/db|postgres:16|false|bridge||postgres|/data:/var/lib/pg,|[]\n")}
+	for _, id := range []string{"DOCKER-001", "DOCKER-002", "DOCKER-003", "DOCKER-004", "DOCKER-005"} {
+		for _, r := range Rules {
+			if r.ID == id && r.Eval(clean).Status != Pass {
+				t.Errorf("%s must pass on a clean host: %+v", id, r.Eval(clean))
+			}
+			if r.ID == id && r.Eval(&Facts{}).Status != Unknown {
+				t.Errorf("%s must be unknown without Docker access", id)
+			}
+		}
+	}
+	for _, bad := range []string{"", "Cannot connect to the Docker daemon", "|x|y"} {
+		if ParseDocker(bad) != nil {
+			t.Errorf("%q must not parse as Docker output", bad)
+		}
+	}
+}
+
+func TestDockerCommandIsAllowlistedAndReadOnly(t *testing.T) {
+	if !allowed[cmdDocker] {
+		t.Fatal("docker command must be in the allowlist")
+	}
+	for _, bad := range []string{" rm ", " run ", " exec ", " stop ", " kill ", " cp ", " pull ", " start ", " create ", " build ", ";", "`", "$("} {
+		if strings.Contains(cmdDocker, bad) {
+			t.Errorf("docker command contains %q", bad)
+		}
+	}
+	// Every docker invocation uses a read-only subcommand, and the only other binary is xargs.
+	fields := strings.Fields(cmdDocker)
+	for i, w := range fields {
+		if w == "docker" && (i+1 >= len(fields) || (fields[i+1] != "info" && fields[i+1] != "ps" && fields[i+1] != "inspect")) {
+			t.Errorf("docker used with a non-read-only subcommand: %v", fields[i:min(i+2, len(fields))])
+		}
 	}
 }

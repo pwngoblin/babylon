@@ -29,6 +29,16 @@ Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/r
 - Release v0.1.0: binaries for macOS arm64/amd64, Linux amd64/arm64, Windows amd64 + SHA256SUMS. Only macOS arm64 was run.
 - Not run: govulncheck, staticcheck, gosec (not installed on the dev machine).
 
+## Infrastructure checks (2026-11-23, after v0.1.0)
+All native, mock-tested, read-only. Probe-level ones need `--allow-active`.
+- Network services (pushed): Consul, Docker registry, YARN, Solr, Jupyter, Kibana, Prometheus, Kubernetes API anonymous, MQTT anonymous, ZooKeeper, rsync modules.
+- Windows (unauthenticated): out-of-support Windows versions from SMB (date-based), MS17-010 via `smb-vuln-ms17-010` (new allowlisted NSE script, checked against nmap categories), RDP legacy security / no NLA via `rdp-enum-encryption`, WinRM on HTTP. Native findings can now carry CVE ids. Not built: WinRM credentialed audit (no Windows lab to test against).
+- SNMP: direct UDP probe (no root needed) with SNMPv2c GET of sysDescr/sysObjectID/sysName using only `public`; encoding checked against the standard capture. Skipped when Nmap's snmp-info already reported it.
+- TLS: direct handshake per protocol version (1.0-1.3) plus certificate checks: deprecated versions, no modern version, expiring in 30 days, SHA-1/MD5 signature, RSA under 2048.
+- Databases: MySQL/MariaDB greeting (version end-of-life by vendor lifecycle date, no TLS), PostgreSQL SSLRequest (no TLS). No logins attempted.
+- Containers (credentialed SSH audit): new allowlisted `docker info`/`ps`/`inspect` command and rules DOCKER-001..005 (privileged, docker.sock mount, host namespaces/paths, dangerous capabilities, running as root). Output format verified against the real local Docker daemon. Unknown when Docker is absent or inaccessible.
+- Not run live: the network-service, SNMP, TLS and DB probes were tested against mocks only (the lab has none of those services except TLS-less web).
+
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
 - No Greenbone/OpenVAS or Tenable content. Non-destructive checks only. Credentials come from env vars per scan and are never stored.
