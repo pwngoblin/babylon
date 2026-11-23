@@ -140,6 +140,7 @@ func (n *nucleiRuntime) planDetect(ctx context.Context, sc store.Scan) ([]store.
 	if err != nil {
 		return nil, err
 	}
+	svcs = n.dropFragile(ctx, sc.ID, svcs)
 	var urls []string
 	for _, s := range svcs {
 		if s.Proto == "tcp" && isHTTPCandidate(s) {
@@ -147,6 +148,24 @@ func (n *nucleiRuntime) planDetect(ctx context.Context, sc store.Scan) ([]store.
 		}
 	}
 	return chunkSpecs(urls, detectTargetsPerJob, "detect", map[string]string{"phase": "detect"}), nil
+}
+
+// dropFragile removes services of hosts marked fragile: template checks send
+// real requests, which such hosts must not receive. The skip is recorded.
+func (n *nucleiRuntime) dropFragile(ctx context.Context, scanID int64, svcs []store.ServiceInfo) []store.ServiceInfo {
+	var out []store.ServiceInfo
+	noted := map[int64]bool{}
+	for _, s := range svcs {
+		if n.st.IsFragile(ctx, s.Address) {
+			if !noted[s.AssetID] {
+				noted[s.AssetID] = true
+				_ = n.st.RecordCheckRun(ctx, scanID, s.AssetID, "nuclei-templates", "skipped", "host is marked fragile: template requests are not sent to it")
+			}
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 type group struct {
@@ -167,6 +186,7 @@ func (n *nucleiRuntime) planScan(ctx context.Context, sc store.Scan) ([]store.Jo
 	if err != nil {
 		return nil, err
 	}
+	svcs = n.dropFragile(ctx, sc.ID, svcs)
 	groups := map[string]*group{}
 	for _, s := range svcs {
 		if s.Proto != "tcp" {

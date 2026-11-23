@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,7 +72,7 @@ func newScansCmd() *cobra.Command {
 		},
 	})
 
-	var format, outFile, accuracy string
+	var format, outFile, accuracy, comp string
 	exp := &cobra.Command{
 		Use: "export <id>", Short: "Export a scan report (json, md, csv, html)", Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
@@ -91,6 +92,11 @@ func newScansCmd() *cobra.Command {
 			r, err := report.Build(c.Context(), a.St, id, acc)
 			if err != nil {
 				return err
+			}
+			if comp != "" {
+				if err := report.AttachCompliance(c.Context(), a.St, r, comp, filepath.Join(a.Home, "checks")); err != nil {
+					return err
+				}
 			}
 			if format == "pdf" {
 				if outFile == "" {
@@ -125,6 +131,7 @@ func newScansCmd() *cobra.Command {
 	exp.Flags().StringVar(&format, "format", "md", "json, md, csv, html, nessus (.nessus v2) or pdf (pdf needs Chrome/Chromium/weasyprint)")
 	exp.Flags().StringVarP(&outFile, "output", "o", "", "write to a file (mode 0600) instead of stdout")
 	exp.Flags().StringVar(&accuracy, "accuracy", "", "override the scan's report accuracy (normal or avoid-false-alarms)")
+	exp.Flags().StringVar(&comp, "compliance", "", "add a per-control section: nist-800-53, pci-dss-4 or iso-27001")
 	cmd.AddCommand(exp)
 
 	cmd.AddCommand(&cobra.Command{

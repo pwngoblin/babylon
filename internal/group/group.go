@@ -186,6 +186,10 @@ func build(k key, m []store.FindingRow) Group {
 }
 
 func (g Group) asRow() store.FindingRow {
-	return store.FindingRow{Address: g.Address, Title: g.Title, Severity: g.Severity, Confidence: g.Confidence,
+	r := store.FindingRow{Address: g.Address, Title: g.Title, Severity: g.Severity, Confidence: g.Confidence,
 		KEV: g.KEVCount > 0, CVSS: g.MaxCVSS, EPSS: g.MaxEPSS}
+	if len(g.Members) > 0 {
+		r.Criticality = g.Members[0].Criticality // members share one host
+	}
+	return r
 }

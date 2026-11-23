@@ -198,6 +198,8 @@ type FindingRow struct {
 	Detection   string
 	Engines     []string
 	Evidence    string
+	Criticality int     // asset criticality 1 (low) to 4 (critical); 2 is the default
+	Triage      *Triage // set when a decision exists (check Active: an expired one no longer hides the finding)
 }
 
 // ListFindings returns findings present in a scan, filtered to at least
@@ -206,8 +208,9 @@ type FindingRow struct {
 func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence string) ([]FindingRow, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT f.id, a.address, COALESCE(f.port,0), COALESCE(f.proto,''), f.title, COALESCE(f.family,''),
 		f.severity, f.cvss_score, f.kev, COALESCE(f.synopsis,''), COALESCE(f.description,''), COALESCE(f.remediation,''),
-		f.confidence, f.detection, f.epss, COALESCE(f.product,''), COALESCE(f.version,''), COALESCE(f.exploit_sources,'')
-		FROM finding f JOIN asset a ON a.id=f.asset_id
+		f.confidence, f.detection, f.epss, COALESCE(f.product,''), COALESCE(f.version,''), COALESCE(f.exploit_sources,''),
+		t.status, t.reason, t.created_at, t.expires_at, a.criticality
+		FROM finding f JOIN asset a ON a.id=f.asset_id LEFT JOIN triage t ON t.finding_id=f.id
 		WHERE f.id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?)`, scanID)
 	if err != nil {
 		return nil, err
@@ -218,10 +221,16 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 		var cvss, epss sql.NullFloat64
 		var kev int
 		var exploits string
+		var tst, trs, tcr, tex sql.NullString
 		if err := rows.Scan(&r.ID, &r.Address, &r.Port, &r.Proto, &r.Title, &r.Family, &r.Severity, &cvss, &kev,
-			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection, &epss, &r.Product, &r.Version, &exploits); err != nil {
+			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection, &epss, &r.Product, &r.Version, &exploits,
+			&tst, &trs, &tcr, &tex, &r.Criticality); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if tst.Valid {
+			r.Triage = &Triage{}
+			r.Triage.fill(tst, trs, tcr, tex, time.Now())
 		}
 		if cvss.Valid {
 			v := cvss.Float64
@@ -243,36 +252,66 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// CVEs, engines and evidence are loaded in two batched queries for the whole
+	// scan, not one pair per finding (that was 14 s for 13,000 findings).
+	idx := make(map[int64]int, len(out))
 	for i := range out {
-		cr, err := s.DB.QueryContext(ctx, `SELECT cve_id FROM finding_cve WHERE finding_id=? ORDER BY cve_id`, out[i].ID)
-		if err != nil {
+		idx[out[i].ID] = i
+	}
+	cr, err := s.DB.QueryContext(ctx, `SELECT fc.finding_id, fc.cve_id FROM finding_cve fc
+		WHERE fc.finding_id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?) ORDER BY fc.finding_id, fc.cve_id`, scanID)
+	if err != nil {
+		return nil, err
+	}
+	for cr.Next() {
+		var fid int64
+		var c string
+		if err := cr.Scan(&fid, &c); err != nil {
+			cr.Close()
 			return nil, err
 		}
-		for cr.Next() {
-			var c string
-			cr.Scan(&c)
+		if i, ok := idx[fid]; ok {
 			out[i].CVEs = append(out[i].CVEs, c)
 		}
-		cr.Close()
-		or, err := s.DB.QueryContext(ctx, `SELECT engine, COALESCE(evidence,'') FROM finding_occurrence WHERE finding_id=? AND scan_id=? ORDER BY id`, out[i].ID, scanID)
-		if err != nil {
+	}
+	cr.Close()
+	if err := cr.Err(); err != nil {
+		return nil, err
+	}
+	or, err := s.DB.QueryContext(ctx, `SELECT finding_id, engine, COALESCE(evidence,'') FROM finding_occurrence WHERE scan_id=? ORDER BY id`, scanID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[int64]map[string]bool{}
+	ev := map[int64][]string{}
+	for or.Next() {
+		var fid int64
+		var e, evd string
+		if err := or.Scan(&fid, &e, &evd); err != nil {
+			or.Close()
 			return nil, err
 		}
-		seen := map[string]bool{}
-		var ev []string
-		for or.Next() {
-			var e, evd string
-			or.Scan(&e, &evd)
-			if !seen[e] {
-				seen[e] = true
-				out[i].Engines = append(out[i].Engines, e)
-			}
-			if evd != "" {
-				ev = append(ev, evd)
-			}
+		i, ok := idx[fid]
+		if !ok {
+			continue
 		}
-		or.Close()
-		out[i].Evidence = strings.Join(ev, "\n")
+		if seen[fid] == nil {
+			seen[fid] = map[string]bool{}
+		}
+		if !seen[fid][e] {
+			seen[fid][e] = true
+			out[i].Engines = append(out[i].Engines, e)
+		}
+		if evd != "" {
+			ev[fid] = append(ev[fid], evd)
+		}
+	}
+	or.Close()
+	if err := or.Err(); err != nil {
+		return nil, err
+	}
+	for fid, list := range ev {
+		out[idx[fid]].Evidence = strings.Join(list, "\n")
 	}
 	sort.SliceStable(out, func(a, b int) bool { return PriorityLess(out[a], out[b]) })
 	return out, nil
@@ -340,11 +379,14 @@ func (s *Store) CheckRunCounts(ctx context.Context, scanID int64) (map[string]in
 	return out, rows.Err()
 }
 
-// PriorityLess orders findings for display: KEV first, then confidence,
+// PriorityLess orders findings for display: KEV first, then asset criticality, then confidence,
 // public exploit available, CVSS, EPSS; severity, host and title break ties for a stable order.
 func PriorityLess(x, y FindingRow) bool {
 	if x.KEV != y.KEV {
 		return x.KEV
+	}
+	if x.Criticality != y.Criticality { // a finding on a crown-jewel asset outranks the same finding elsewhere
+		return x.Criticality > y.Criticality
 	}
 	if cx, cy := model.ConfidenceRank(x.Confidence), model.ConfidenceRank(y.Confidence); cx != cy {
 		return cx > cy
@@ -372,4 +414,30 @@ func deref(f *float64) float64 {
 		return 0
 	}
 	return *f
+}
+
+// FindingRef ties a finding in a scan to the engine reference (the check id for
+// native checks and audit rules) that produced it.
+type FindingRef struct {
+	Address, Engine, EngineRef, Title, Severity string
+}
+
+// FindingRefs lists every finding occurrence in a scan with its producing check.
+func (s *Store) FindingRefs(ctx context.Context, scanID int64) ([]FindingRef, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT a.address, o.engine, o.engine_ref, f.title, f.severity
+		FROM finding_occurrence o JOIN finding f ON f.id=o.finding_id JOIN asset a ON a.id=f.asset_id
+		WHERE o.scan_id=? ORDER BY a.address, f.title`, scanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FindingRef
+	for rows.Next() {
+		var r FindingRef
+		if err := rows.Scan(&r.Address, &r.Engine, &r.EngineRef, &r.Title, &r.Severity); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

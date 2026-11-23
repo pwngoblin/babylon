@@ -315,3 +315,41 @@ func TestSeveralFindingsOfOneCheckOnOnePortAreNotMerged(t *testing.T) {
 		t.Fatalf("identity must be stable: %d", len(rows))
 	}
 }
+
+// A host marked fragile must never receive active probes, and the report must say why.
+func TestFragileHostsSkipProbeLevelChecks(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	id, _ := st.CreateScan(ctx, "a", "basic", []string{"10.0.0.5"}, map[string]any{})
+	st.IngestHost(ctx, id, model.Host{Address: "10.0.0.5", State: "up"})
+	assetID, _ := st.AssetID(ctx, "10.0.0.5")
+	probed := false
+	probe := Check{ID: "probe", Name: "probe", Family: "x", Safety: policy.SafetyProbe, Run: func(*Env) []Finding {
+		probed = true
+		return []Finding{{Title: "found", Severity: "low"}}
+	}}
+	passive := Check{ID: "passive", Name: "passive", Family: "x", Safety: policy.SafetyReadOnly, Run: func(*Env) []Finding {
+		return []Finding{{Title: "seen", Severity: "low"}}
+	}}
+	env := &Env{Address: "10.0.0.5", AssetID: assetID, Fragile: true}
+	if err := RunHost(ctx, st, id, env, []Check{passive, probe}); err != nil {
+		t.Fatal(err)
+	}
+	if probed {
+		t.Fatal("an active probe ran against a fragile host")
+	}
+	runs, _ := st.ListCheckRuns(ctx, id)
+	skipped := ""
+	for _, r := range runs {
+		if r.CheckID == "probe" && r.State == "skipped" {
+			skipped = r.Reason
+		}
+	}
+	if !strings.Contains(skipped, "fragile") {
+		t.Fatalf("skip reason must say why: %q", skipped)
+	}
+	rows, _ := st.ListFindings(ctx, id, "")
+	if len(rows) != 1 || rows[0].Title != "seen" {
+		t.Fatalf("read-only checks must still run: %+v", rows)
+	}
+}

@@ -4,6 +4,8 @@ package app
 
 import (
 	"babylon/internal/audit"
+	"babylon/internal/dbaudit"
+	"babylon/internal/notify"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -39,7 +41,9 @@ type App struct {
 	// request), and are never written to the database.
 	SSH *audit.Creds
 	// Win holds WinRM credentials (same rules as SSH: memory only, never stored).
-	Win      *audit.WinCreds
+	Win *audit.WinCreds
+	// DB holds database credentials (PostgreSQL, MySQL/MariaDB), same rules: memory only.
+	DB       *dbaudit.Creds
 	HostKeys audit.HostKeyPolicy
 }
 
@@ -111,8 +115,8 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if res.Template.RequiresCreds && a.SSH == nil && a.Win == nil {
-		return 0, fmt.Errorf("template %q needs credentials: pass --ssh-user (Linux) and/or --winrm-user (Windows) with the matching password or key from the environment (CLI only; credentials are never stored)", req.Template)
+	if res.Template.RequiresCreds && a.SSH == nil && a.Win == nil && a.DB == nil {
+		return 0, fmt.Errorf("template %q needs credentials: pass --ssh-user (Linux), --winrm-user (Windows) and/or --db-user (PostgreSQL, MySQL/MariaDB) with the matching password or key from the environment (CLI only; credentials are never stored)", req.Template)
 	}
 	parsed, err := policy.ParseTargets(req.Targets)
 	if err != nil {
@@ -158,6 +162,8 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 		po.SSHLabel = a.SSH.Label
 	} else if a.Win != nil {
 		po.SSHLabel = a.Win.Label
+	} else if a.DB != nil {
+		po.SSHLabel = a.DB.Label
 	}
 	return a.St.CreateScan(ctx, req.Name, req.Template, targets, po)
 }
@@ -213,11 +219,14 @@ func (a *App) Run(ctx context.Context, id int64, forceSudo bool) (Result, error)
 
 	sopt := scan.Options{Privilege: priv, Ports: po.Ports}
 	if res.Template.Audit {
-		if a.SSH == nil && a.Win == nil {
-			return out, fmt.Errorf("scan %d is a credentialed scan: supply the credentials again (--ssh-user or --winrm-user, with passwords from the environment); they are never stored", id)
+		if a.SSH == nil && a.Win == nil && a.DB == nil {
+			return out, fmt.Errorf("scan %d is a credentialed scan: supply the credentials again (--ssh-user, --winrm-user or --db-user, with passwords from the environment); they are never stored", id)
 		}
 		if a.SSH != nil {
 			sopt.Audit = &scan.AuditConfig{Creds: *a.SSH, HostKeys: a.HostKeys}
+		}
+		if a.DB != nil {
+			sopt.DBAudit = &scan.DBAuditConfig{Creds: *a.DB}
 		}
 		if a.Win != nil {
 			sopt.WinAudit = &scan.WinAuditConfig{Creds: *a.Win}
@@ -257,6 +266,11 @@ func (a *App) Run(ctx context.Context, id int64, forceSudo bool) (Result, error)
 		return out, err
 	}
 	out.Summary, err = orch.Run(ctx, id)
+	if err == nil {
+		if nerr := a.notifyChange(ctx, id); nerr != nil {
+			out.Warnings = append(out.Warnings, "notification not sent: "+nerr.Error())
+		}
+	}
 	return out, err
 }
 
@@ -312,4 +326,31 @@ func lastAddr(p netip.Prefix) netip.Addr {
 	}
 	r, _ := netip.AddrFromSlice(b)
 	return r
+}
+
+// notifyChange sends a webhook for new findings since the previous scan of the
+// same targets, when ~/.babylon/notify.yaml exists. The first scan of a set of
+// targets is a baseline and sends nothing.
+func (a *App) notifyChange(ctx context.Context, id int64) error {
+	cfg, err := notify.Load(a.Home)
+	if err != nil || cfg == nil {
+		return err
+	}
+	sc, err := a.St.GetScanSummary(ctx, id)
+	if err != nil || sc.Status != store.ScanCompleted {
+		return err
+	}
+	prev, err := a.St.PreviousScan(ctx, id)
+	if err != nil || prev == 0 {
+		return err
+	}
+	d, err := a.St.DiffScans(ctx, prev, id)
+	if err != nil {
+		return err
+	}
+	msg := cfg.Build(id, sc.Targets, d)
+	if msg == nil {
+		return nil
+	}
+	return cfg.Send(ctx, msg)
 }

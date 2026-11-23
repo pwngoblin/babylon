@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 
 	"babylon/internal/app"
@@ -160,6 +161,12 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "scan not found")
 		return
 	}
+	if fw := r.URL.Query().Get("compliance"); fw != "" {
+		if err := report.AttachCompliance(r.Context(), s.app.St, rep, fw, filepath.Join(s.app.Home, "checks")); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+	}
 	var buf bytes.Buffer
 	var ctype, ext string
 	switch f := r.URL.Query().Get("format"); f {
@@ -255,4 +262,40 @@ func (s *Server) diff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"new": d.New, "resolved": d.Resolved, "persisting": d.Persisting})
+}
+
+// trends returns, per set of targets scanned repeatedly, open findings over time
+// and what is new or resolved since the previous scan.
+func (s *Server) trends(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("last"))
+	if limit <= 0 {
+		limit = 10
+	}
+	series, err := s.app.St.Trends(r.Context(), limit)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	type point struct {
+		ScanID     int64          `json:"scan_id"`
+		FinishedAt string         `json:"finished_at"`
+		Hosts      int            `json:"hosts"`
+		Findings   map[string]int `json:"findings"`
+		New        int            `json:"new"`
+		Resolved   int            `json:"resolved"`
+		Failed     bool           `json:"had_failed_jobs"`
+	}
+	type ser struct {
+		Targets []string `json:"targets"`
+		Points  []point  `json:"points"`
+	}
+	out := []ser{}
+	for _, x := range series {
+		o := ser{Targets: x.Targets, Points: []point{}}
+		for _, p := range x.Points {
+			o.Points = append(o.Points, point{p.ScanID, p.FinishedAt, p.Hosts, p.Findings, p.New, p.Resolved, p.Failed})
+		}
+		out = append(out, o)
+	}
+	writeJSON(w, 200, out)
 }

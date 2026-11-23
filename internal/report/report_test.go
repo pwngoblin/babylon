@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"babylon/internal/model"
 	"babylon/internal/store"
@@ -189,5 +190,47 @@ func TestWriteNessus(t *testing.T) {
 	it := d.Report.Hosts[0].Items[0]
 	if it.Severity != 4 || it.CVE != "CVE-2021-41773" || it.Svc != "http" || it.Plugin < 9_000_000 || strings.ContainsRune(it.Name, 0) {
 		t.Errorf("item: %+v", it)
+	}
+}
+
+func TestTriagedFindingsLeaveTheCountsAndAreListed(t *testing.T) {
+	st, id := seed(t)
+	ctx := context.Background()
+	fs, _ := st.ListFindings(ctx, id, "")
+	var crit int64
+	for _, f := range fs {
+		if f.Severity == "critical" {
+			crit = f.ID
+		}
+	}
+	exp := time.Now().Add(48 * time.Hour)
+	if err := st.SetTriage(ctx, crit, store.TriageAcceptedRisk, "patch window next week", &exp, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Build(ctx, st, id, "normal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range r.Findings {
+		if f.Severity == "critical" {
+			t.Fatal("triaged finding is still in the findings list")
+		}
+	}
+	if len(r.Triaged) != 1 || r.Triaged[0].Reason != "patch window next week" || r.Summary.Triaged != 1 || r.Summary.FindingsBySev["critical"] != 0 {
+		t.Fatalf("triaged=%+v summary=%+v", r.Triaged, r.Summary)
+	}
+	var b bytes.Buffer
+	if err := WriteMarkdown(&b, r); err != nil || !strings.Contains(b.String(), "Triaged findings (1") {
+		t.Fatalf("markdown lacks the triaged section: %v", err)
+	}
+	// Once the decision lapses the finding returns with a note.
+	st.DB.Exec(`UPDATE triage SET expires_at=?`, time.Now().Add(-time.Hour).UTC().Format(time.RFC3339))
+	r, _ = Build(ctx, st, id, "normal")
+	back := false
+	for _, f := range r.Findings {
+		back = back || (f.Severity == "critical" && strings.Contains(f.TriageNote, "expired"))
+	}
+	if !back || len(r.Triaged) != 0 {
+		t.Fatalf("expired decision should resurface the finding with a note: %+v", r.Findings)
 	}
 }

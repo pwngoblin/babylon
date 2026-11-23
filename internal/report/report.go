@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"babylon/internal/compliance"
 	"babylon/internal/group"
 	"babylon/internal/store"
 )
@@ -28,6 +29,9 @@ type Report struct {
 	Findings      []Finding `json:"findings"`
 	Groups        []Group   `json:"root_causes,omitempty"`
 	Coverage      Coverage  `json:"coverage"`
+	Triaged       []Triaged `json:"triaged,omitempty"`
+	// Compliance is set by AttachCompliance when a framework was requested.
+	Compliance *compliance.Report `json:"compliance,omitempty"`
 }
 
 type ScanInfo struct {
@@ -51,6 +55,7 @@ type Summary struct {
 	PossibleHidden bool           `json:"possible_hidden_by_accuracy"`
 	JobsFailed     int            `json:"jobs_failed"`
 	ChecksSkipped  int            `json:"checks_skipped"`
+	Triaged        int            `json:"triaged_findings"`
 }
 
 type Host struct {
@@ -80,7 +85,22 @@ type Service struct {
 	TLSWeak []string `json:"tls_issues,omitempty"`
 }
 
+// Triaged is a finding hidden from the counts by an active triage decision.
+type Triaged struct {
+	ID        int64  `json:"id"`
+	Title     string `json:"title"`
+	Host      string `json:"host"`
+	Port      int    `json:"port,omitempty"`
+	Severity  string `json:"severity"`
+	Status    string `json:"status"` // accepted_risk | false_positive
+	Reason    string `json:"reason"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
 type Finding struct {
+	ID          int64    `json:"id"` // use with `babylon triage add`
+	Criticality string   `json:"asset_criticality,omitempty"`
+	TriageNote  string   `json:"triage_note,omitempty"`
 	Severity    string   `json:"severity"`
 	Confidence  string   `json:"confidence"`
 	Detection   string   `json:"detection"`
@@ -193,6 +213,15 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 	}
 	var shown []store.FindingRow
 	for _, f := range fs {
+		note := ""
+		if f.Triage != nil {
+			if f.Triage.Active {
+				r.Triaged = append(r.Triaged, Triaged{ID: f.ID, Title: f.Title, Host: f.Address, Port: f.Port, Severity: f.Severity,
+					Status: f.Triage.Status, Reason: f.Triage.Reason, ExpiresAt: f.Triage.ExpiresAt})
+				continue
+			}
+			note = "an earlier " + strings.ReplaceAll(f.Triage.Status, "_", " ") + " decision expired on " + f.Triage.ExpiresAt + ": review it"
+		}
 		possible := f.Confidence == "tentative" && f.Severity != "info"
 		switch {
 		case f.Severity == "info":
@@ -207,7 +236,7 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 		}
 		shown = append(shown, f)
 		r.Findings = append(r.Findings, Finding{
-			Severity: f.Severity, Confidence: f.Confidence, Detection: f.Detection, Title: f.Title, Host: f.Address,
+			ID: f.ID, Criticality: store.CriticalityName(f.Criticality), TriageNote: note, Severity: f.Severity, Confidence: f.Confidence, Detection: f.Detection, Title: f.Title, Host: f.Address,
 			Port: f.Port, Proto: f.Proto, Family: f.Family, CVEs: f.CVEs, CVSS: f.CVSS, EPSS: f.EPSS, KEV: f.KEV, Exploits: f.Exploits, Product: f.Product, Version: f.Version, Synopsis: f.Synopsis,
 			Description: f.Description, Remediation: f.Remediation, Evidence: f.Evidence, Engines: f.Engines, Possible: possible,
 		})
@@ -240,6 +269,7 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 		}
 	}
 	r.Summary.ChecksSkipped = r.Coverage.CheckRuns["skipped"]
+	r.Summary.Triaged = len(r.Triaged)
 	return r, nil
 }
 
@@ -312,7 +342,10 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 				where = fmt.Sprintf("%s:%d/%s", f.Host, f.Port, f.Proto)
 			}
 			fmt.Fprintf(&b, "### [%s] %s\n\n", strings.ToUpper(f.Severity), mdInline(f.Title))
-			fmt.Fprintf(&b, "- **Host:** %s\n- **Confidence:** %s (%s)\n- **Detected by:** %s\n", mdInline(where), f.Confidence, f.Detection, mdInline(strings.Join(f.Engines, ", ")))
+			if f.TriageNote != "" {
+				fmt.Fprintf(&b, "> **%s**\n\n", mdInline(f.TriageNote))
+			}
+			fmt.Fprintf(&b, "- **Host:** %s\n- **Confidence:** %s (%s)\n- **Detected by:** %s\n- **Finding id:** %d\n", mdInline(where), f.Confidence, f.Detection, mdInline(strings.Join(f.Engines, ", ")), f.ID)
 			if len(f.CVEs) > 0 {
 				fmt.Fprintf(&b, "- **CVE:** %s\n", mdInline(strings.Join(f.CVEs, ", ")))
 			}
@@ -369,6 +402,14 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 		b.WriteString("\n")
 	}
 
+	if len(r.Triaged) > 0 {
+		fmt.Fprintf(&b, "## Triaged findings (%d, not counted above)\n\n| Id | Severity | Host | Finding | Decision | Reason | Expires |\n|---|---|---|---|---|---|---|\n", len(r.Triaged))
+		for _, t := range r.Triaged {
+			fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s |\n", t.ID, t.Severity, cell(t.Host), cell(t.Title), strings.ReplaceAll(t.Status, "_", " "), cell(t.Reason), cell(t.ExpiresAt))
+		}
+		b.WriteString("\n")
+	}
+	writeComplianceMD(&b, r.Compliance)
 	b.WriteString("## Coverage\n\n")
 	fmt.Fprintf(&b, "Checks run: %d, skipped: %d, errored: %d.\n\n", r.Coverage.CheckRuns["ran"], r.Coverage.CheckRuns["skipped"], r.Coverage.CheckRuns["error"])
 	if len(r.Coverage.FailedJobs) > 0 {
@@ -461,4 +502,39 @@ func csvSafe(s string) string {
 		return "'" + s
 	}
 	return s
+}
+
+// AttachCompliance adds the per-control report for a framework (see the
+// compliance package for what a pass or fail means). packDir is the user check
+// pack directory, whose controls are included.
+func AttachCompliance(ctx context.Context, st *store.Store, r *Report, framework, packDir string) error {
+	c, err := compliance.ForScan(ctx, st, r.Scan.ID, framework, packDir)
+	if err != nil {
+		return err
+	}
+	r.Compliance = c
+	return nil
+}
+
+func writeComplianceMD(b *strings.Builder, c *compliance.Report) {
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(b, "## Compliance: %s\n\n", mdInline(c.Title))
+	fmt.Fprintf(b, "%d controls failed, %d passed, %d not assessed.\n\n_%s_\n\n", c.Failed, c.Passed, c.NotAssess, mdInline(c.Caveat))
+	b.WriteString("| Control | Status | Hosts failed | Evidence |\n|---|---|---|---|\n")
+	for _, x := range c.Controls {
+		ev := fmt.Sprintf("%d host(s) passed; checks: %s", x.HostsPassed, strings.Join(x.Checks, ", "))
+		if x.Status == compliance.StatusNotAssessed {
+			ev = "no check ran; assessed by: " + strings.Join(x.Checks, ", ")
+		}
+		if len(x.Failures) > 0 {
+			ev = strings.Join(x.Failures, "; ")
+		}
+		fmt.Fprintf(b, "| %s %s | %s | %s | %s |\n", cell(x.ID), cell(x.Title), x.Status, cell(strings.Join(x.HostsFailed, ", ")), cell(ev))
+	}
+	if len(c.Unmapped) > 0 {
+		fmt.Fprintf(b, "\nChecks that ran but map to no control in this framework: %s.\n", cell(strings.Join(c.Unmapped, ", ")))
+	}
+	b.WriteString("\n")
 }

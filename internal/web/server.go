@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/schedules/{id}/toggle", s.api(s.toggleSchedule))
 	mux.HandleFunc("DELETE /api/schedules/{id}", s.api(s.deleteSchedule))
 	mux.HandleFunc("GET /api/diff", s.api(s.diff))
+	mux.HandleFunc("GET /api/trends", s.api(s.trends))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.index)
 	return s.protect(mux)

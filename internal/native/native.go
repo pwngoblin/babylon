@@ -28,6 +28,9 @@ type Env struct {
 	TLS      []store.TLSRow
 	KB       map[string]json.RawMessage
 	Now      time.Time
+	// Fragile marks a host (old appliance, PLC, printer) that must not receive
+	// active probes: checks above read-only safety are skipped with a reason.
+	Fragile bool
 }
 
 // Script returns an Nmap NSE script's output for a service, if it produced any.
@@ -168,6 +171,9 @@ func RunHost(ctx context.Context, st *store.Store, scanID int64, env *Env, order
 				reason = "dependency " + d + " did not run"
 				break
 			}
+		}
+		if reason == "" && env.Fragile && c.Safety > policy.SafetyReadOnly {
+			reason = "host is marked fragile: active probes are not sent to it"
 		}
 		if reason == "" && c.Needs != nil {
 			reason = c.Needs(env)

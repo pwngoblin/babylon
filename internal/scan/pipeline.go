@@ -47,6 +47,7 @@ type Options struct {
 
 	timingHostTimeout time.Duration // set from the timing profile
 
+	DBAudit  *DBAuditConfig  // database credentials (PostgreSQL, MySQL/MariaDB; in memory only); nil disables it
 	WinAudit *WinAuditConfig // WinRM credentials for Windows hosts (in memory only); nil disables it
 	Audit    *AuditConfig    // credentials for the credentialed stage (in memory only); nil disables it
 }
@@ -170,6 +171,9 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 			deps = append(deps, StageCPEMatch) // banner guesses must exist before the audit can supersede them
 		}
 		stages = append(stages, auditStage(st, opt.Audit, deps))
+	}
+	if res.Template.Audit && res.Template.Ports != "" && opt.DBAudit != nil {
+		stages = append(stages, dbAuditStage(st, opt.DBAudit, []string{StagePortscan}))
 	}
 	if res.Template.Audit && res.Template.Ports != "" && opt.WinAudit != nil {
 		deps := []string{StagePortscan}

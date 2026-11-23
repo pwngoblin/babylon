@@ -13,6 +13,7 @@ import (
 
 	"babylon/internal/app"
 	"babylon/internal/audit"
+	"babylon/internal/dbaudit"
 	"babylon/internal/group"
 	"babylon/internal/orchestrator"
 	"babylon/internal/policy"
@@ -28,6 +29,8 @@ type scanOptions struct {
 	winrmUser, winrmPassEnv, winrmLabel                                 string
 	winrmPort                                                           int
 	winrmHTTP, winrmInsecure                                            bool
+	dbUser, dbPassEnv, dbName, dbLabel                                  string
+	dbPlaintext                                                         bool
 	trustNew                                                            bool
 	home                                                                string
 	template                                                            string
@@ -90,6 +93,11 @@ Targets are IPs, CIDRs or hostnames. Public addresses are refused unless
 	f.IntVar(&o.winrmPort, "winrm-port", 0, "WinRM port (default 5986 for HTTPS, 5985 with --winrm-http)")
 	f.BoolVar(&o.winrmHTTP, "winrm-http", false, "use WinRM over HTTP (port 5985); NTLM message encryption still protects the data")
 	f.BoolVar(&o.winrmInsecure, "winrm-insecure-tls", false, "accept self-signed WinRM HTTPS certificates (common on Windows; weakens server identity checks)")
+	f.StringVar(&o.dbUser, "db-user", "", "database user for credentialed PostgreSQL and MySQL/MariaDB audits (template: credentialed)")
+	f.StringVar(&o.dbPassEnv, "db-password-env", "", "name of an environment variable holding the database password")
+	f.StringVar(&o.dbName, "db-name", "", "PostgreSQL database to connect to (default postgres)")
+	f.StringVar(&o.dbLabel, "db-label", "", "label recorded with the scan to identify this credential set (default: the user name)")
+	f.BoolVar(&o.dbPlaintext, "db-allow-plaintext", false, "allow the database audit to log in without TLS when the server has none (the password then crosses the network unencrypted)")
 	f.StringVar(&o.winrmLabel, "winrm-label", "", "label recorded with the scan to identify this credential set (default: the user name)")
 	f.Uint64Var(&o.maxHosts, "max-hosts", 0, "refuse scans expanding to more addresses than this (default 1048576)")
 	return cmd
@@ -131,6 +139,16 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 			return fmt.Errorf("--winrm-* options need --template %s", policy.TemplateCredentialed)
 		}
 		a.Win = wcreds
+	}
+	dcreds, err := o.dbCreds()
+	if err != nil {
+		return err
+	}
+	if dcreds != nil {
+		if o.template != policy.TemplateCredentialed && o.resume == 0 {
+			return fmt.Errorf("--db-* options need --template %s", policy.TemplateCredentialed)
+		}
+		a.DB = dcreds
 	}
 	a.AllowSudo = true // an interactive user may use sudo; `sudo -n` fails safely without a cached ticket
 
@@ -246,7 +264,12 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 		return
 	}
 	var verified, possible, informational []store.FindingRow
+	triaged := 0
 	for _, f := range findings {
+		if f.Triage != nil && f.Triage.Active {
+			triaged++
+			continue
+		}
 		switch {
 		case f.Severity == "info":
 			informational = append(informational, f)
@@ -255,6 +278,9 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 		default:
 			verified = append(verified, f)
 		}
+	}
+	if triaged > 0 {
+		fmt.Fprintf(w, "\n%d finding(s) hidden by triage decisions (babylon triage list)\n", triaged)
 	}
 	section := func(title string, list []store.FindingRow) {
 		if len(list) == 0 {
@@ -296,7 +322,7 @@ func printSummary(w io.Writer, ctx context.Context, st *store.Store, id int64, s
 			if f.KEV {
 				kev = " KEV"
 			}
-			fmt.Fprintf(w, "  %-8s %-22s %s%s%s  [%s]\n", strings.ToUpper(f.Severity), where, f.Title, cve, kev, strings.Join(f.Engines, "+"))
+			fmt.Fprintf(w, "  %-8s %-22s %s%s%s  [%s] #%d\n", strings.ToUpper(f.Severity), where, f.Title, cve, kev, strings.Join(f.Engines, "+"), f.ID)
 		}
 	}
 	section("Findings", verified)
@@ -356,6 +382,27 @@ func (o scanOptions) winCreds() (*audit.WinCreds, error) {
 	c := &audit.WinCreds{User: o.winrmUser, Password: pw, Port: o.winrmPort, HTTP: o.winrmHTTP, SkipVerify: o.winrmInsecure, Label: o.winrmLabel}
 	if c.Label == "" {
 		c.Label = o.winrmUser
+	}
+	return c, nil
+}
+
+func (o scanOptions) dbCreds() (*dbaudit.Creds, error) {
+	if o.dbUser == "" && o.dbPassEnv == "" {
+		return nil, nil
+	}
+	if o.dbUser == "" {
+		return nil, fmt.Errorf("--db-user is required")
+	}
+	if o.dbPassEnv == "" {
+		return nil, fmt.Errorf("give --db-password-env (the name of an environment variable holding the password)")
+	}
+	pw := os.Getenv(o.dbPassEnv)
+	if pw == "" {
+		return nil, fmt.Errorf("environment variable %s is empty or unset", o.dbPassEnv)
+	}
+	c := &dbaudit.Creds{User: o.dbUser, Password: pw, Database: o.dbName, Label: o.dbLabel, AllowPlaintext: o.dbPlaintext}
+	if c.Label == "" {
+		c.Label = o.dbUser
 	}
 	return c, nil
 }

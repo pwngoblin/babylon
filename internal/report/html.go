@@ -234,6 +234,15 @@ details>div{padding:4px 14px 12px}pre{white-space:pre-wrap;word-break:break-word
 {{range .Families}}<h3>{{.Name}} <span class="mut">({{len .Findings}})</span></h3>{{if .Blurb}}<p class="mut">{{.Blurb}}</p>{{end}}
 {{range .Findings}}{{template "finding" .}}{{end}}{{else}}<p class="mut">No findings.</p>{{end}}
 
+{{if .R.Triaged}}<h2>Triaged findings ({{len .R.Triaged}}, not counted above)</h2>
+<table><tr><th>Id</th><th>Severity</th><th>Host</th><th>Finding</th><th>Decision</th><th>Reason</th><th>Expires</th></tr>
+{{range .R.Triaged}}<tr><td>{{.ID}}</td><td>{{.Severity}}</td><td class="mono">{{.Host}}</td><td>{{.Title}}</td><td>{{.Status}}</td><td>{{.Reason}}</td><td>{{.ExpiresAt}}</td></tr>{{end}}</table>{{end}}
+{{with .R.Compliance}}<h2>Compliance: {{.Title}}</h2>
+<p class="mut">{{.Caveat}}</p><p>{{.Failed}} failed · {{.Passed}} passed · {{.NotAssess}} not assessed</p>
+<table><tr><th>Control</th><th>Status</th><th>Hosts failed</th><th>Evidence</th></tr>
+{{range .Controls}}<tr><td class="mono">{{.ID}} <span class="mut">{{.Title}}</span></td><td>{{.Status}}</td><td class="mono">{{join .HostsFailed ", "}}</td><td>{{if .Failures}}{{join .Failures "; "}}{{else if eq .Status "not_assessed"}}no check ran; assessed by: {{join .Checks ", "}}{{else}}{{.HostsPassed}} host(s) passed; checks: {{join .Checks ", "}}{{end}}</td></tr>{{end}}</table>
+{{if .Unmapped}}<p class="mut">Checks that ran but map to no control in this framework: {{join .Unmapped ", "}}.</p>{{end}}{{end}}
+
 <h2>Scan coverage and audit trail</h2>
 <p class="mut">What ran and what did not, so a quiet report can be told apart from a thin scan.</p>
 {{if .Checks}}<table><tr><th>Check</th><th>Runs</th></tr>{{range .Checks}}<tr><td class="mono">{{.K}}</td><td>{{.V}}</td></tr>{{end}}</table>{{end}}

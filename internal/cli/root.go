@@ -19,6 +19,6 @@ func Execute(ctx context.Context) error {
 		SilenceErrors: false,
 		Version:       Version,
 	}
-	root.AddCommand(newDoctorCmd(), newScanCmd(), newScansCmd(), newFeedsCmd(), newServeCmd(), newLabCmd(), newChecksCmd())
+	root.AddCommand(newDoctorCmd(), newScanCmd(), newScansCmd(), newFeedsCmd(), newServeCmd(), newLabCmd(), newChecksCmd(), newTriageCmd(), newAssetsCmd(), newTrendCmd(), newNotifyCmd())
 	return root.ExecuteContext(ctx)
 }

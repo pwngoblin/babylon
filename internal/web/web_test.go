@@ -298,6 +298,15 @@ func TestScanLifecycleExportAndDelete(t *testing.T) {
 	if err != nil || len(rows) < 2 || strings.HasPrefix(rows[1][5], "=") {
 		t.Fatalf("csv formula not neutralized: %v err=%v", rows, err)
 	}
+	if c := h.do("GET", "/api/scans/1/export?format=md&compliance=nist-800-53", ""); c.Code != 200 || !strings.Contains(c.Body.String(), "## Compliance: NIST SP 800-53") {
+		t.Errorf("compliance export: %d %s", c.Code, c.Body.String())
+	}
+	if h.do("GET", "/api/scans/1/export?format=md&compliance=bogus", "").Code != 400 {
+		t.Error("unknown framework must be 400")
+	}
+	if tr := h.do("GET", "/api/trends", ""); tr.Code != 200 || !strings.HasPrefix(strings.TrimSpace(tr.Body.String()), "[") {
+		t.Errorf("trends: %d %s", tr.Code, tr.Body.String())
+	}
 	if h.do("GET", "/api/scans/1/export?format=exe", "").Code != 400 {
 		t.Error("unknown export format must be 400")
 	}

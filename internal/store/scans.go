@@ -91,8 +91,9 @@ func (s *Store) fillSummary(ctx context.Context, sm *ScanSummary) error {
 	rows.Close()
 	s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM host_observation WHERE scan_id=? AND state='up'`, sm.ID).Scan(&sm.Hosts)
 	s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM service WHERE scan_id=? AND state='open'`, sm.ID).Scan(&sm.Services)
+	// Findings with an active triage decision (accepted risk, false positive) are not counted.
 	fr, err := s.DB.QueryContext(ctx, `SELECT f.severity, COUNT(*) FROM finding f
-		WHERE f.id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?) GROUP BY f.severity`, sm.ID)
+		WHERE f.id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?) AND NOT `+activeTriageSQL+` GROUP BY f.severity`, sm.ID, nowArg())
 	if err != nil {
 		return err
 	}

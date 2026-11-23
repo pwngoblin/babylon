@@ -57,7 +57,7 @@ func nativeStage(st *store.Store, res *policy.Resolved, packDir string, extraDep
 				return err
 			}
 			for _, addr := range job.Targets {
-				env := &native.Env{Address: addr, Now: time.Now()}
+				env := &native.Env{Address: addr, Now: time.Now(), Fragile: st.IsFragile(bg, addr)}
 				for _, s := range all {
 					if s.Address == addr {
 						env.AssetID = s.AssetID
