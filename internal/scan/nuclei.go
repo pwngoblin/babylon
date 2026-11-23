@@ -105,6 +105,9 @@ func targetURL(s store.ServiceInfo) string {
 	if s.Tunnel == "ssl" || strings.HasPrefix(strings.ToLower(s.Name), "https") {
 		scheme = "https"
 	}
+	if (scheme == "http" && s.Port == 80) || (scheme == "https" && s.Port == 443) {
+		return scheme + "://" + hostLit(s.Address) // default port: keep the URL clean
+	}
 	return fmt.Sprintf("%s://%s:%d", scheme, hostLit(s.Address), s.Port)
 }
 

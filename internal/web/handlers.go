@@ -96,6 +96,9 @@ func (s *Server) getScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jobs, _ := s.app.St.ListJobs(r.Context(), id)
+	if jobs == nil {
+		jobs = []store.JobRow{} // a pending scan has no jobs yet; JSON must be [] not null
+	}
 	writeJSON(w, 200, map[string]any{"scan": s.scanOut(r, sm), "jobs": jobs})
 }
 

@@ -128,6 +128,15 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	{
+		var ps []netip.Prefix
+		for _, t := range resolved {
+			ps = append(ps, t.Prefix)
+		}
+		if err := checkScope(a.Home, ps); err != nil {
+			return 0, err
+		}
+	}
 	targets := make([]string, 0, len(resolved))
 	for _, t := range resolved {
 		targets = append(targets, prefixString(t.Prefix))

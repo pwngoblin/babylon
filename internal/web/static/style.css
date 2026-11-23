@@ -81,3 +81,5 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 20; }
 #toast .t { background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.25); margin-top: 8px; }
 @media (max-width: 640px) { .topbar { padding: 0 12px; gap: 8px; } th, td { padding: 8px; } }
+
+.sortbtn { all: unset; cursor: pointer; text-transform: inherit; letter-spacing: inherit; } .sortbtn:hover, .sortbtn:focus-visible { color: var(--fg, inherit); text-decoration: underline; }

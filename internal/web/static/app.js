@@ -45,6 +45,16 @@ function toast(msg) {
 }
 
 const SEVS = ['critical', 'high', 'medium', 'low', 'info'];
+// Findings table sort: key is a column id, dir is 1 (asc) or -1 (desc). Default order comes from the server (null).
+let findSort = { key: null, dir: 1 };
+const SORTERS = {
+  sev: f => SEVS.indexOf(f.severity),
+  title: f => (f.title || '').toLowerCase(),
+  host: f => (f.host || '') + ':' + String(f.port || 0).padStart(5, '0'),
+  cve: f => (f.cve_ids || [])[0] || '',
+  cvss: f => (f.cvss_score == null ? -1 : f.cvss_score),
+  engine: f => (f.engines || []).join('+'),
+};
 const sevChip = s => el('span', { class: 'sev sev-' + s }, s);
 const badge = s => el('span', { class: 'badge s-' + s }, s);
 const fmtTime = t => t ? t.replace('T', ' ').slice(0, 19) : '';
@@ -190,7 +200,7 @@ async function scanView(id, tab) {
     lastStatus = s.Status;
     if (changed) lastReport = await api('/api/scans/' + id + '/report');
     renderHead(s);
-    renderTab(s, d.jobs, lastReport);
+    renderTab(s, d.jobs || [], lastReport);
     if (!s.running) stopTimer();
   };
 
@@ -264,6 +274,10 @@ async function scanView(id, tab) {
         (!sevSel.value || f.severity === sevSel.value) &&
         (!confSel.value || (confSel.value === 'possible') === !!f.possible) &&
         (!needle || (f.title + ' ' + f.host + ' ' + (f.cve_ids || []).join(' ')).toLowerCase().includes(needle)));
+      if (findSort.key) {
+        const g = SORTERS[findSort.key], d = findSort.dir;
+        items.sort((a, b) => { const x = g(a), y = g(b); return (x < y ? -1 : x > y ? 1 : 0) * d; });
+      }
       clear(list);
       if (!items.length) { list.append(el('div', { class: 'card muted' }, 'No findings match.')); return; }
       const tbody = el('tbody');
@@ -281,7 +295,18 @@ async function scanView(id, tab) {
         row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
         tbody.append(row, detail);
       }
-      list.append(el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ...['Severity', 'Finding', 'Host', 'CVE', 'CVSS', 'Found by'].map(h => el('th', {}, h)))), tbody)));
+      list.append(el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ...[['sev', 'Severity'], ['title', 'Finding'], ['host', 'Host'], ['cve', 'CVE'], ['cvss', 'CVSS'], ['engine', 'Found by']].map(([k, h]) => {
+        const on = findSort.key === k;
+        // Natural first direction: critical first for severity (index asc), highest first for CVSS, A-Z otherwise.
+        const first = k === 'cvss' ? -1 : 1;
+        const btn = el('button', { class: 'sortbtn', type: 'button', title: 'Sort by ' + h, onclick: () => {
+          if (!on) findSort = { key: k, dir: first };
+          else if (findSort.dir === first) findSort = { key: k, dir: -first };
+          else findSort = { key: null, dir: 1 }; // third click: back to default order
+          draw();
+        } }, h + (on ? (findSort.dir === first ? ' ▼' : ' ▲') : ''));
+        return el('th', { 'aria-sort': on ? (findSort.dir === 1 ? 'ascending' : 'descending') : 'none' }, btn);
+      }))), tbody)));
     };
     [sevSel, confSel].forEach(c => c.addEventListener('change', draw));
     q.addEventListener('input', draw);

@@ -75,7 +75,11 @@ func (m *manager) start(id int64) error {
 		if err != nil {
 			// A setup failure (e.g. unusable sudo) leaves the scan pending; mark it failed so it is visible.
 			if sc, e := m.app.St.GetScan(context.Background(), id); e == nil && (sc.Status == store.ScanPending || sc.Status == store.ScanRunning) {
-				_ = m.app.St.SetScanStatus(context.Background(), id, store.ScanFailed)
+				st := store.ScanFailed
+				if ctx.Err() != nil {
+					st = store.ScanCancelled // cancelled before the orchestrator started: not a failure
+				}
+				_ = m.app.St.SetScanStatus(context.Background(), id, st)
 			}
 		}
 	}()

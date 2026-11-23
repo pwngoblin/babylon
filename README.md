@@ -47,6 +47,7 @@ export PW='your-ssh-password'
 
 - Safe by default: no exploits, no denial-of-service. Intrusive checks need explicit flags.
 - Public IP addresses are refused unless you add `--i-have-authorization`. Only scan what you own or may test.
+- Want a hard limit? Put allowed IPs/CIDRs (one per line) in `~/.babylon/scope.txt`. Babylon then refuses to scan anything outside that list.
 - Everything is stored in `~/.babylon/babylon.db`. Passwords are never saved.
 - It does not use Nessus or OpenVAS/Greenbone vulnerability content (licensing), so it will not match them on every check.
 - Early software. Expect rough edges.
