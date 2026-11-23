@@ -33,8 +33,17 @@ func Compile(d Def) native.Check {
 	c := native.Check{
 		ID: d.ID, Name: d.Name, Family: d.Family, Safety: safety, Controls: d.Controls,
 		Needs: func(e *native.Env) string {
-			if len(d.services(e)) == 0 {
+			svcs := d.services(e)
+			if len(svcs) == 0 {
 				return "no open service matches " + d.scope()
+			}
+			if d.Kind == "passive" {
+				for _, s := range svcs {
+					if d.assessable(e, s) {
+						return ""
+					}
+				}
+				return "no service identified as the product this check judges, or its version is not precise (a range)"
 			}
 			return ""
 		},
@@ -155,6 +164,25 @@ func expand(t string, caps map[string]string) string {
 }
 
 // ---- passive ----
+
+// assessable reports whether a passive check can judge a service at all: every
+// positive condition on a field other than the version must match (the service
+// is the product the check is about), and no negated condition on the version
+// may match (a negated version condition marks a value the check cannot judge,
+// such as Nmap's "9.6.0 or later"). Without this a check would count as having
+// run, and a compliance control as passed, on hosts it says nothing about.
+func (d *Def) assessable(e *native.Env, s store.ServiceInfo) bool {
+	for _, c := range d.Match {
+		matched := c.re.MatchString(passiveValue(e, s, c.Field))
+		switch {
+		case !c.Not && c.Field != "version" && !matched:
+			return false
+		case c.Not && c.Field == "version" && matched:
+			return false
+		}
+	}
+	return true
+}
 
 func (d *Def) evalPassive(e *native.Env, s store.ServiceInfo) (string, map[string]string, bool) {
 	caps := map[string]string{}

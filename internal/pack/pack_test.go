@@ -234,3 +234,38 @@ func TestUserDirLoadsAndDuplicatesAreRefused(t *testing.T) {
 }
 
 func writeFile(path, content string) error { return os.WriteFile(path, []byte(content), 0o644) }
+
+// A passive check must not count as having run on a host that is not running the
+// product it judges, nor on a version it cannot judge: otherwise compliance
+// reports "pass" for things that were never assessed.
+func TestPassiveChecksAreOnlyAssessedWhereTheyApply(t *testing.T) {
+	defs, _ := Builtin()
+	var tomcat, pg Def
+	for _, d := range defs {
+		switch d.ID {
+		case "BBL-EOL-0003":
+			tomcat = d
+		case "BBL-EOL-0004":
+			pg = d
+		}
+	}
+	envOf := func(s store.ServiceInfo) *native.Env {
+		return &native.Env{Address: "h", Services: []store.ServiceInfo{s}}
+	}
+	nginx := store.ServiceInfo{Port: 8080, Proto: "tcp", Name: "http", Product: "nginx", Version: "1.25"}
+	if Compile(tomcat).Needs(envOf(nginx)) == "" {
+		t.Error("the Tomcat check was counted as run on an nginx server")
+	}
+	tc := store.ServiceInfo{Port: 8080, Proto: "tcp", Name: "http", Product: "Apache Tomcat", Version: "10.1.20"}
+	if Compile(tomcat).Needs(envOf(tc)) != "" {
+		t.Error("the Tomcat check must run (and pass) on a current Tomcat")
+	}
+	rng := store.ServiceInfo{Port: 5432, Proto: "tcp", Name: "postgresql", Product: "PostgreSQL DB", Version: "9.6.20 - 9.6.23 or 11.14 - 11.18"}
+	if Compile(pg).Needs(envOf(rng)) == "" {
+		t.Error("an Nmap version range cannot be judged and must be skipped, not passed")
+	}
+	exact := store.ServiceInfo{Port: 5432, Proto: "tcp", Name: "postgresql", Product: "PostgreSQL DB", Version: "16.2"}
+	if Compile(pg).Needs(envOf(exact)) != "" {
+		t.Error("an exact version is assessable")
+	}
+}
