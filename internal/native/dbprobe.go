@@ -14,6 +14,8 @@ import (
 // PostgreSQL gets the standard 8-byte SSLRequest (what psql sends first) and
 // answers with one byte. No login is attempted on either.
 
+func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+
 type dbRelease struct {
 	prefix string
 	name   string

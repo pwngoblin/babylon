@@ -73,6 +73,7 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   try {
     if (parts[0] === 'new') { setNav('new'); await newScanView(); }
+    else if (parts[0] === 'schedules') { setNav('schedules'); await schedulesView(); }
     else if (parts[0] === 'status') { setNav('status'); await statusView(); }
     else if (parts[0] === 'scan' && parts[1]) { setNav('scans'); await scanView(+parts[1], parts[2] || 'overview'); }
     else if (parts[0] === 'compare' && parts[1] && parts[2]) { setNav('scans'); await compareView(+parts[1], +parts[2]); }
@@ -127,6 +128,32 @@ async function scansView() {
   poll(() => render().catch(() => {}), 2500);
 }
 
+// ---------- schedules ----------
+const everyText = m => m % 10080 === 0 ? 'every ' + (m / 10080 === 1 ? 'week' : m / 10080 + ' weeks') : m % 1440 === 0 ? 'every ' + (m === 1440 ? 'day' : m / 1440 + ' days') : m % 60 === 0 ? 'every ' + (m === 60 ? 'hour' : m / 60 + ' hours') : 'every ' + m + ' min';
+const fmtUnix = t => t ? new Date(t * 1000).toLocaleString() : '–';
+async function schedulesView() {
+  const body = el('div');
+  const render = async () => {
+    const list = await api('/api/schedules');
+    clear(body);
+    if (!list.length) { body.append(el('div', { class: 'card muted' }, 'No schedules yet. Choose "Repeat" when you create a scan.')); return; }
+    body.append(el('div', { class: 'table-wrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Name', 'Repeats', 'Next run', 'Last run', 'Last scan', 'State', ''].map(h => el('th', {}, h)))),
+      el('tbody', {}, list.map(s => {
+        let req = {}; try { req = JSON.parse(s.request); } catch (e) { /* unreadable stored request */ }
+        return el('tr', {},
+          el('td', {}, s.name, el('div', { class: 'muted mono' }, (req.targets || []).join(', '))),
+          el('td', {}, everyText(s.interval_min)), el('td', {}, s.enabled ? fmtUnix(s.next_run) : '–'), el('td', {}, fmtUnix(s.last_run)),
+          el('td', {}, s.last_scan_id ? el('a', { href: '#/scan/' + s.last_scan_id }, '#' + s.last_scan_id) : '–', s.last_error ? el('div', { class: 'alert error' }, s.last_error) : null),
+          el('td', {}, s.enabled ? 'active' : 'paused'),
+          el('td', {}, el('button', { onclick: async () => { await api('/api/schedules/' + s.id + '/toggle', { method: 'POST', body: { enabled: !s.enabled } }); render(); } }, s.enabled ? 'Pause' : 'Resume'), ' ',
+            el('button', { onclick: async () => { if (confirm('Delete this schedule? Past scans are kept.')) { await api('/api/schedules/' + s.id, { method: 'DELETE' }); render(); } } }, 'Delete')));
+      })))));
+  };
+  mount(el('h1', {}, 'Schedules'), el('p', { class: 'sub' }, 'Recurring scans run while this web UI is running. Each run is a normal scan you can compare with the previous one.'), body);
+  await render();
+}
+
 // ---------- new scan ----------
 async function newScanView() {
   const st = await api('/api/status');
@@ -150,6 +177,7 @@ async function newScanView() {
   const accuracy = el('select', { id: 'accuracy' }, el('option', { value: 'normal' }, 'Normal: show unverified (version-based) findings separately'), el('option', { value: 'avoid-false-alarms' }, 'Avoid false alarms: hide unverified findings'));
   const creds = el('input', { type: 'checkbox', id: 'creds' });
   const authz = el('input', { type: 'checkbox', id: 'authz' });
+  const repeat = el('select', { id: 'repeat' }, ...[['', 'Run once'], ['60', 'Repeat every hour'], ['1440', 'Repeat every day'], ['10080', 'Repeat every week'], ['43200', 'Repeat every 30 days']].map(([v, t]) => el('option', { value: v }, t)));
   const submit = el('button', { type: 'submit', class: 'primary' }, 'Start scan');
 
   form.append(
@@ -159,6 +187,8 @@ async function newScanView() {
     el('div', { class: 'hint' }, 'IP addresses, CIDR ranges or hostnames, one per line or separated by commas. Public addresses are refused unless you confirm authorization below.'),
     el('label', { for: 'ports' }, 'Ports (optional)'), ports,
     el('label', { for: 'accuracy' }, 'Report accuracy'), accuracy,
+    el('label', { for: 'repeat' }, 'Schedule'), repeat,
+    el('div', { class: 'hint' }, 'Repeated scans run while this web UI is running. Credentialed scans cannot be scheduled (credentials are never stored).'),
     el('details', { style: 'margin-top:16px' }, el('summary', {}, 'Advanced'),
       el('label', { class: 'inline' }, active, el('span', {}, 'Allow active probes (Full template only). Non-destructive, but sends more requests.')),
       el('label', { class: 'inline' }, creds, el('span', {}, 'Check default credentials. May trigger account lockouts; use only where that is acceptable.')),
@@ -174,6 +204,12 @@ async function newScanView() {
         targets: targets.value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         allow_active: active.checked, check_default_creds: creds.checked, authorized: authz.checked,
       };
+      if (repeat.value) {
+        const r = await api('/api/schedules', { method: 'POST', body: { name: body.name, every_minutes: +repeat.value, scan: body } });
+        toast('Schedule created; the first scan has started');
+        location.hash = '#/scan/' + r.first_scan;
+        return;
+      }
       const r = await api('/api/scans', { method: 'POST', body });
       if (!r.started) toast(r.message || 'Scan created but not started');
       location.hash = '#/scan/' + r.id;
@@ -219,6 +255,7 @@ async function scanView(id, tab) {
           running ? el('button', { onclick: () => act('/api/scans/' + id + '/cancel', 'POST', 'Cancelling…') }, 'Cancel') : null,
           !running && s.Status !== 'completed' ? el('button', { class: 'primary', onclick: () => act('/api/scans/' + id + '/resume', 'POST', 'Resuming…') }, 'Resume') : null,
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=html' }, 'Export HTML'),
+          el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=nessus' }, 'Export .nessus'),
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=md' }, 'MD'),
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=json' }, 'JSON'),
           el('a', { class: 'btn', href: '/api/scans/' + id + '/export?format=csv' }, 'CSV'),

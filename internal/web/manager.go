@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"babylon/internal/app"
 	"babylon/internal/store"
@@ -105,4 +106,18 @@ func (m *manager) shutdown() {
 	}
 	m.mu.Unlock()
 	m.wg.Wait()
+}
+
+// runScheduler starts due scheduled scans once a minute until ctx ends.
+func (m *manager) runScheduler(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			m.app.RunDue(ctx, now, m.start, errBusy)
+		}
+	}
 }

@@ -13,6 +13,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
@@ -86,6 +87,9 @@ func New(a *app.App, token, listen, version string, maxConcurrent int) (*Server,
 // Manager exposes shutdown/recovery for the process owner.
 func (s *Server) Shutdown() { s.mgr.shutdown() }
 
+// RunScheduler starts due scheduled scans until ctx ends.
+func (s *Server) RunScheduler(ctx context.Context) { s.mgr.runScheduler(ctx) }
+
 // Handler returns the full handler with all protections applied.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -98,6 +102,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/scans/{id}/cancel", s.api(s.cancelScan))
 	mux.HandleFunc("POST /api/scans/{id}/resume", s.api(s.resumeScan))
 	mux.HandleFunc("DELETE /api/scans/{id}", s.api(s.deleteScan))
+	mux.HandleFunc("GET /api/schedules", s.api(s.listSchedules))
+	mux.HandleFunc("POST /api/schedules", s.api(s.createSchedule))
+	mux.HandleFunc("POST /api/schedules/{id}/toggle", s.api(s.toggleSchedule))
+	mux.HandleFunc("DELETE /api/schedules/{id}", s.api(s.deleteSchedule))
 	mux.HandleFunc("GET /api/diff", s.api(s.diff))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.index)

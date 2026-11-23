@@ -70,7 +70,7 @@ func orDefault(s, d string) string {
 
 // AuditSessions lists credentialed audit outcomes for a scan, with package counts.
 func (s *Store) AuditSessions(ctx context.Context, scanID int64) ([]AuditSession, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT a.address, au.asset_id, COALESCE(au.os_name,''), COALESCE(au.os_version,''), COALESCE(au.kernel,''),
+	rows, err := s.DB.QueryContext(ctx, `SELECT a.address, au.asset_id, au.transport, COALESCE(au.os_family,''), COALESCE(au.os_name,''), COALESCE(au.os_version,''), COALESCE(au.kernel,''),
 		COALESCE(au.ecosystem,''), au.result, COALESCE(au.error,''),
 		(SELECT COUNT(*) FROM package p WHERE p.scan_id=au.scan_id AND p.asset_id=au.asset_id)
 		FROM audit_session au JOIN asset a ON a.id=au.asset_id WHERE au.scan_id=? ORDER BY a.address`, scanID)
@@ -81,8 +81,7 @@ func (s *Store) AuditSessions(ctx context.Context, scanID int64) ([]AuditSession
 	var out []AuditSession
 	for rows.Next() {
 		var x AuditSession
-		x.Transport = "ssh"
-		if err := rows.Scan(&x.Address, &x.AssetID, &x.OSName, &x.OSVersion, &x.Kernel, &x.Ecosystem, &x.Result, &x.Error, &x.Packages); err != nil {
+		if err := rows.Scan(&x.Address, &x.AssetID, &x.Transport, &x.OSFamily, &x.OSName, &x.OSVersion, &x.Kernel, &x.Ecosystem, &x.Result, &x.Error, &x.Packages); err != nil {
 			return nil, err
 		}
 		out = append(out, x)

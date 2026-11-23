@@ -37,7 +37,9 @@ type App struct {
 	// SSH holds credentials for credentialed scans. They live in memory for
 	// this process only, are set by the local operator (never by a web
 	// request), and are never written to the database.
-	SSH      *audit.Creds
+	SSH *audit.Creds
+	// Win holds WinRM credentials (same rules as SSH: memory only, never stored).
+	Win      *audit.WinCreds
 	HostKeys audit.HostKeyPolicy
 }
 
@@ -109,8 +111,8 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if res.Template.RequiresCreds && a.SSH == nil {
-		return 0, fmt.Errorf("template %q needs SSH credentials: pass --ssh-user with --ssh-key or --ssh-password-env (CLI only for now; credentials are never stored)", req.Template)
+	if res.Template.RequiresCreds && a.SSH == nil && a.Win == nil {
+		return 0, fmt.Errorf("template %q needs credentials: pass --ssh-user (Linux) and/or --winrm-user (Windows) with the matching password or key from the environment (CLI only; credentials are never stored)", req.Template)
 	}
 	parsed, err := policy.ParseTargets(req.Targets)
 	if err != nil {
@@ -154,6 +156,8 @@ func (a *App) Create(ctx context.Context, req Request) (int64, error) {
 		Sudo: req.Sudo && a.AllowSudo, Accuracy: req.Accuracy, Ports: req.Ports, Authorized: req.Authorized}
 	if a.SSH != nil {
 		po.SSHLabel = a.SSH.Label
+	} else if a.Win != nil {
+		po.SSHLabel = a.Win.Label
 	}
 	return a.St.CreateScan(ctx, req.Name, req.Template, targets, po)
 }
@@ -209,10 +213,18 @@ func (a *App) Run(ctx context.Context, id int64, forceSudo bool) (Result, error)
 
 	sopt := scan.Options{Privilege: priv, Ports: po.Ports}
 	if res.Template.Audit {
-		if a.SSH == nil {
-			return out, fmt.Errorf("scan %d is a credentialed scan: supply the SSH credentials again (--ssh-user and --ssh-key or --ssh-password-env); they are never stored", id)
+		if a.SSH == nil && a.Win == nil {
+			return out, fmt.Errorf("scan %d is a credentialed scan: supply the credentials again (--ssh-user or --winrm-user, with passwords from the environment); they are never stored", id)
 		}
-		sopt.Audit = &scan.AuditConfig{Creds: *a.SSH, HostKeys: a.HostKeys}
+		if a.SSH != nil {
+			sopt.Audit = &scan.AuditConfig{Creds: *a.SSH, HostKeys: a.HostKeys}
+		}
+		if a.Win != nil {
+			sopt.WinAudit = &scan.WinAuditConfig{Creds: *a.Win}
+			if n, _, _ := a.St.CountMSRC(ctx); n == 0 {
+				out.Warnings = append(out.Warnings, "no Microsoft security data indexed; Windows missing-patch matching will be skipped (run: babylon update-feeds --only msrc)")
+			}
+		}
 		if n, _, _ := a.St.CountOSV(ctx); n == 0 {
 			out.Warnings = append(out.Warnings, "no OSV package data indexed; package vulnerability matching will report nothing (run: babylon update-feeds --only osv)")
 		}

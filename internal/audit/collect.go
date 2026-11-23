@@ -111,6 +111,7 @@ func Collect(ctx context.Context, r Runner) (*Facts, error) {
 	f.Files = ParseStat(run(cmdStat))
 	f.Sysctl = ParseSysctl(run(cmdSysctl))
 	f.Docker = ParseDocker(run(cmdDocker))
+	collectBaseline(f, run)
 
 	if f.OS.ID == "" && len(f.Packages) == 0 {
 		return f, fmt.Errorf("host returned no OS information or packages; commands may be restricted for this account")

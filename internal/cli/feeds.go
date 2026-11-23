@@ -19,7 +19,7 @@ import (
 	"babylon/internal/store"
 )
 
-var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv"}
+var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv", "msrc"}
 
 type feedsOptions struct {
 	home         string
@@ -29,6 +29,7 @@ type feedsOptions struct {
 	osv          []string
 	nvdPages     int
 	cveYear      int
+	msrcMonths   int
 	status       bool
 }
 
@@ -45,6 +46,7 @@ func newFeedsCmd() *cobra.Command {
   nvd               NVD CVE + affected product/version ranges (powers version matching)
   cvelist           CVE Program records: version ranges for CVEs NVD has not analysed yet
   osv               OSV.dev ecosystem dumps (Debian, Ubuntu, Alpine, Rocky, Alma, PyPI, npm, Go)
+  msrc              Microsoft security bulletins: Windows fix revisions (powers the Windows patch audit)
 
 Downloads are conditional (ETag / Last-Modified), so repeat runs are quick. The
 first NVD sync pages through ~430k CVEs: about 25 minutes without an API key,
@@ -64,6 +66,7 @@ Use --no-download with --templates-dir to index an existing Nuclei checkout offl
 	f.StringSliceVar(&o.osv, "osv-ecosystems", intel.DefaultOSVEcosystems, "OSV ecosystems to fetch")
 	f.IntVar(&o.nvdPages, "nvd-pages", 0, "stop the NVD download after this many pages of 2000 (seed a partial index; rerun to continue)")
 	f.IntVar(&o.cveYear, "cvelist-from-year", 2024, "cvelistV5: import records from this CVE year onward")
+	f.IntVar(&o.msrcMonths, "msrc-months", 12, "msrc: how many recent monthly bulletins to download (each is about 30 MB)")
 	f.BoolVar(&o.status, "status", false, "show what is indexed and how old it is, then exit")
 	return cmd
 }
@@ -154,6 +157,14 @@ func runFeeds(ctx context.Context, out io.Writer, o feedsOptions) error {
 				} else {
 					fmt.Fprintln(out, "  cvelist: already up to date")
 				}
+			}
+			return err
+		})
+		run("msrc", func() error {
+			fmt.Fprintf(out, "Microsoft security bulletins (last %d months) ...\n", o.msrcMonths)
+			n, err := intel.SyncMSRC(ctx, fetch, st, "", o.msrcMonths, func(f string, a ...any) { fmt.Fprintf(out, f+"\n", a...) })
+			if err == nil {
+				fmt.Fprintf(out, "  msrc: %d fixes added\n", n)
 			}
 			return err
 		})

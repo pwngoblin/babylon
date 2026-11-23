@@ -548,3 +548,64 @@ func (s *Store) AddCVEListRanges(ctx context.Context, recs []CVERecord) (int, er
 	})
 	return added, err
 }
+
+// MSRCFix is one Windows security fix: the first revision of a build that contains it.
+type MSRCFix struct {
+	Build    string // major.minor.build, e.g. 10.0.19045
+	CVE      string
+	FixedUBR int
+	KB       string
+	Title    string
+	CVSS     *float64
+	Severity string
+}
+
+// UpsertMSRC stores fixes, keeping the highest fixed revision per (build, CVE)
+// because a later bulletin month may supersede an earlier fix.
+func (s *Store) UpsertMSRC(ctx context.Context, fixes []MSRCFix, feed FeedInfo) error {
+	return s.W.Do(ctx, func(tx *sql.Tx) error {
+		st, err := tx.PrepareContext(ctx, `INSERT INTO msrc_fix(os_build,cve,fixed_ubr,kb,title,cvss,severity) VALUES(?,?,?,?,?,?,?)
+			ON CONFLICT(os_build,cve) DO UPDATE SET fixed_ubr=excluded.fixed_ubr, kb=excluded.kb, title=excluded.title,
+			  cvss=COALESCE(excluded.cvss, cvss), severity=COALESCE(excluded.severity, severity)
+			WHERE excluded.fixed_ubr > msrc_fix.fixed_ubr`)
+		if err != nil {
+			return err
+		}
+		defer st.Close()
+		for _, f := range fixes {
+			if _, err := st.ExecContext(ctx, f.Build, f.CVE, f.FixedUBR, f.KB, f.Title, f.CVSS, f.Severity); err != nil {
+				return err
+			}
+		}
+		return setFeed(tx, feed)
+	})
+}
+
+// MSRCMissing returns the fixes a host on (build, ubr) does not yet have.
+func (s *Store) MSRCMissing(ctx context.Context, build string, ubr int) ([]MSRCFix, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT os_build,cve,fixed_ubr,COALESCE(kb,''),COALESCE(title,''),cvss,COALESCE(severity,'') FROM msrc_fix WHERE os_build=? AND fixed_ubr>? ORDER BY cve`, build, ubr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MSRCFix
+	for rows.Next() {
+		var f MSRCFix
+		var c sql.NullFloat64
+		if err := rows.Scan(&f.Build, &f.CVE, &f.FixedUBR, &f.KB, &f.Title, &c, &f.Severity); err != nil {
+			return nil, err
+		}
+		if c.Valid {
+			v := c.Float64
+			f.CVSS = &v
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// CountMSRC returns the number of stored fixes and builds covered.
+func (s *Store) CountMSRC(ctx context.Context) (fixes, builds int, err error) {
+	err = s.DB.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(DISTINCT os_build) FROM msrc_fix`).Scan(&fixes, &builds)
+	return
+}

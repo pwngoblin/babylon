@@ -2,79 +2,32 @@ package native
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
-	"time"
+
+	"babylon/internal/winrel"
 )
 
 // Windows infrastructure checks over data Nmap already collected (SMB OS
 // discovery, RDP negotiation, the MS17-010 protocol check). They read results
 // only; no check here logs in or sends anything itself.
 
-type winRelease struct {
-	match string // lowercase substring of the advertised OS name
-	name  string
-	eol   time.Time
-	note  string
-}
-
-func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
-
-// Order matters: more specific names first ("2008 r2" before "2008", "8.1" before "8").
-// Dates are Microsoft's end of mainstream/extended security updates (no ESU assumed).
-var winReleases = []winRelease{
-	{"windows server 2022", "Windows Server 2022", day(2031, 10, 14), ""},
-	{"windows server 2019", "Windows Server 2019", day(2029, 1, 9), ""},
-	{"windows server 2016", "Windows Server 2016", day(2027, 1, 12), ""},
-	{"windows server 2012 r2", "Windows Server 2012 R2", day(2023, 10, 10), ""},
-	{"windows server 2012", "Windows Server 2012", day(2023, 10, 10), ""},
-	{"windows server 2008 r2", "Windows Server 2008 R2", day(2020, 1, 14), ""},
-	{"windows server 2008", "Windows Server 2008", day(2020, 1, 14), ""},
-	{"windows server 2003", "Windows Server 2003", day(2015, 7, 14), ""},
-	{"windows 2000", "Windows 2000", day(2010, 7, 13), ""},
-	{"windows xp", "Windows XP", day(2014, 4, 8), ""},
-	{"windows vista", "Windows Vista", day(2017, 4, 11), ""},
-	{"windows 7", "Windows 7", day(2020, 1, 14), ""},
-	{"windows 8.1", "Windows 8.1", day(2023, 1, 10), ""},
-	{"windows 8", "Windows 8", day(2016, 1, 12), ""},
-	{"windows 10", "Windows 10", day(2025, 10, 14), " Paid Extended Security Updates (ESU) can extend this for some editions; verify if the host is enrolled."},
-}
-
-var smbOSLine = regexp.MustCompile(`(?im)^\s*OS:\s*(.+)$`)
-
-// WindowsRelease returns the advertised OS string and the matching release, if any.
-func WindowsRelease(smbOSDiscovery string) (string, *winRelease) {
-	m := smbOSLine.FindStringSubmatch(smbOSDiscovery)
-	if m == nil {
-		return "", nil
-	}
-	os := strings.TrimSpace(m[1])
-	low := strings.ToLower(os)
-	for i := range winReleases {
-		if strings.Contains(low, winReleases[i].match) {
-			return os, &winReleases[i]
-		}
-	}
-	return os, nil
-}
-
 var windowsEOL = Check{
 	ID: "windows-eol", Name: "Windows version is out of support", Family: "Unsupported software",
 	Needs: scriptNeeds("smb-os-discovery"),
 	Run: func(e *Env) []Finding {
 		return perHit(e, "smb-os-discovery", func(h ScriptHit) *Finding {
-			os, rel := WindowsRelease(h.Output)
-			if rel == nil || !rel.eol.Before(e.Now) {
+			os, rel := winrel.FromSMB(h.Output)
+			if rel == nil || !rel.EOL.Before(e.Now) {
 				return nil
 			}
 			sev := "high"
-			if rel.name == "Windows 10" {
+			if rel.Name == "Windows 10" {
 				sev = "medium" // ESU may apply
 			}
 			return &Finding{
-				Title: "Unsupported Windows Version: " + rel.name, Severity: sev,
+				Title: "Unsupported Windows Version: " + rel.Name, Severity: sev,
 				Synopsis:    "The host runs a Windows version that no longer receives security updates.",
-				Description: fmt.Sprintf("%s reached end of support on %s. New vulnerabilities are not fixed, so the host is exposed to every flaw published since.%s", rel.name, rel.eol.Format("2006-01-02"), rel.note),
+				Description: fmt.Sprintf("%s reached end of support on %s. New vulnerabilities are not fixed, so the host is exposed to every flaw published since.%s", rel.Name, rel.EOL.Format("2006-01-02"), rel.Note),
 				Remediation: "Upgrade to a supported Windows release. Until then, isolate the host from untrusted networks.",
 				Evidence:    "SMB advertised: " + os, Detection: "version", Confidence: "firm",
 			}

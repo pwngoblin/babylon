@@ -352,3 +352,37 @@ func TestConcurrentScanLimit(t *testing.T) {
 		t.Errorf("delete after cancel = %d", rr.Code)
 	}
 }
+
+func TestScheduleAPI(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "nmap"), []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	hn := newHarness(t)
+	if rr := hn.do("GET", "/api/schedules", ""); rr.Code != 200 || strings.TrimSpace(rr.Body.String()) != "[]" {
+		t.Fatalf("empty list = %d %q", rr.Code, rr.Body.String())
+	}
+	bad := `{"name":"x","every_minutes":5,"scan":{"template":"host_discovery","targets":["127.0.0.1"]}}`
+	if rr := hn.do("POST", "/api/schedules", bad); rr.Code != 400 {
+		t.Errorf("interval under 15 min = %d", rr.Code)
+	}
+	if rr := hn.do("POST", "/api/schedules", `{"name":"x","every_minutes":60,"scan":{"template":"host_discovery","targets":["8.8.8.8"]}}`); rr.Code != 400 {
+		t.Errorf("public target must still be refused: %d", rr.Code)
+	}
+	ok := `{"name":"hourly","every_minutes":60,"scan":{"template":"host_discovery","targets":["127.0.0.1"],"max_hosts":1}}`
+	rr := hn.do("POST", "/api/schedules", ok)
+	if rr.Code != 201 {
+		t.Fatalf("create = %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := hn.do("POST", "/api/schedules/1/toggle", `{"enabled":false}`); rr.Code != 200 {
+		t.Errorf("toggle = %d", rr.Code)
+	}
+	if rr := hn.do("POST", "/api/schedules/9/toggle", `{"enabled":false}`); rr.Code != 404 {
+		t.Errorf("toggle missing = %d", rr.Code)
+	}
+	if rr := hn.do("POST", "/api/schedules", ok, noCookie()); rr.Code != 401 {
+		t.Errorf("schedules need auth: %d", rr.Code)
+	}
+	if rr := hn.do("DELETE", "/api/schedules/1", ""); rr.Code != 200 {
+		t.Errorf("delete = %d", rr.Code)
+	}
+}

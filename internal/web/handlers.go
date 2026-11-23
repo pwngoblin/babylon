@@ -169,10 +169,12 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 		ctype, ext, err = "text/csv", "csv", report.WriteCSV(&buf, rep)
 	case "html":
 		ctype, ext, err = "text/html", "html", report.WriteHTML(&buf, rep)
+	case "nessus":
+		ctype, ext, err = "application/xml", "nessus", report.WriteNessus(&buf, rep)
 	case "md", "markdown", "":
 		ctype, ext, err = "text/markdown", "md", report.WriteMarkdown(&buf, rep)
 	default:
-		writeErr(w, 400, "format must be json, md, csv or html")
+		writeErr(w, 400, "format must be json, md, csv, html or nessus")
 		return
 	}
 	if err != nil {

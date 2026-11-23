@@ -65,6 +65,7 @@ func runServe(ctx context.Context, out interface{ Write([]byte) (int, error) }, 
 	if err != nil {
 		return err
 	}
+	go srvHandler.RunScheduler(ctx) // scheduled scans run while the server is up
 	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("cannot listen on %s: %w", listen, err)

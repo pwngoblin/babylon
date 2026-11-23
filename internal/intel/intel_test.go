@@ -617,3 +617,70 @@ func TestSyncCVEListFillsGapsAndNeverOverridesNVD(t *testing.T) {
 		t.Errorf("unchanged release must be skipped: changed=%v err=%v", changed, err)
 	}
 }
+
+const msrcSample = `{"Vulnerability":[
+ {"CVE":"CVE-2026-1111","Title":{"Value":"Kernel EoP"},
+  "Threats":[{"Type":0,"Description":{"Value":"Elevation of Privilege"}},{"Type":3,"Description":{"Value":"Important"}}],
+  "CVSSScoreSets":[{"BaseScore":7.8},{"BaseScore":7.0}],
+  "Remediations":[{"Description":{"Value":"5001"},"FixedBuild":"10.0.19045.5000"},{"Description":{"Value":"5002"},"FixedBuild":"10.0.22631.4000"},{"Description":{"Value":"x"},"FixedBuild":""}]},
+ {"CVE":"CVE-2026-2222","Title":{"Value":"SMB RCE"},
+  "Threats":[{"Type":3,"Description":{"Value":"Critical"}}],
+  "Remediations":[{"Description":{"Value":"5001"},"FixedBuild":"10.0.19045.5000"},{"Description":{"Value":"5009"},"FixedBuild":"10.0.19045.5100"}]},
+ {"CVE":"not-a-cve","Remediations":[{"FixedBuild":"10.0.19045.1"}]}
+]}`
+
+func TestParseMSRC(t *testing.T) {
+	fx, err := ParseMSRC(strings.NewReader(msrcSample))
+	if err != nil || len(fx) != 3 {
+		t.Fatalf("%v %+v", err, fx)
+	}
+	by := map[string]store.MSRCFix{}
+	for _, f := range fx {
+		by[f.Build+"|"+f.CVE] = f
+	}
+	a := by["10.0.19045|CVE-2026-1111"]
+	if a.FixedUBR != 5000 || a.KB != "5001" || a.Severity != "high" || a.CVSS == nil || *a.CVSS != 7.8 {
+		t.Errorf("%+v", a)
+	}
+	if b := by["10.0.19045|CVE-2026-2222"]; b.FixedUBR != 5100 || b.Severity != "critical" {
+		t.Errorf("the later fix must win: %+v", b)
+	}
+	if _, ok := by["10.0.22631|CVE-2026-1111"]; !ok {
+		t.Error("each Windows build gets its own row")
+	}
+}
+
+func TestSyncMSRC(t *testing.T) {
+	st := newStore(t)
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits[r.URL.Path]++
+		switch r.URL.Path {
+		case "/updates":
+			w.Write([]byte(`{"value":[
+			 {"ID":"2026-Oct","DocumentTitle":"October 2026 Security Updates","InitialReleaseDate":"2026-10-13T00:00:00Z","CurrentReleaseDate":"2026-10-20T00:00:00Z"},
+			 {"ID":"2026-Sep","DocumentTitle":"September 2026 Security Updates","InitialReleaseDate":"2026-09-08T00:00:00Z","CurrentReleaseDate":"2026-09-08T00:00:00Z"},
+			 {"ID":"1999-Sep","DocumentTitle":"Mariner Release Notes","InitialReleaseDate":"1999-09-02T00:00:00Z","CurrentReleaseDate":"2026-11-16T00:00:00Z"}]}`))
+		case "/cvrf/2026-Oct", "/cvrf/2026-Sep":
+			w.Write([]byte(msrcSample))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	f := &Fetcher{Client: srv.Client(), Retries: 0, Backoff: time.Millisecond, UA: "t"}
+	n, err := SyncMSRC(context.Background(), f, st, srv.URL, 1, nil)
+	if err != nil || n != 3 || hits["/cvrf/2026-Sep"] != 0 || hits["/cvrf/1999-Sep"] != 0 {
+		t.Fatalf("n=%d err=%v hits=%v (only the newest month, and never Mariner notes)", n, err, hits)
+	}
+	if n, _ := SyncMSRC(context.Background(), f, st, srv.URL, 1, nil); n != 0 || hits["/cvrf/2026-Oct"] != 1 {
+		t.Errorf("an unchanged month must not be downloaded again: n=%d hits=%v", n, hits)
+	}
+	miss, err := st.MSRCMissing(context.Background(), "10.0.19045", 4000)
+	if err != nil || len(miss) != 2 {
+		t.Fatalf("host at 4000 is missing both fixes: %v %+v", err, miss)
+	}
+	if miss, _ := st.MSRCMissing(context.Background(), "10.0.19045", 5100); len(miss) != 0 {
+		t.Errorf("a fully patched host is missing %+v", miss)
+	}
+}

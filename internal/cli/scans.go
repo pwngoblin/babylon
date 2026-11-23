@@ -116,11 +116,13 @@ func newScansCmd() *cobra.Command {
 				return report.WriteCSV(w, r)
 			case "html":
 				return report.WriteHTML(w, r)
+			case "nessus":
+				return report.WriteNessus(w, r)
 			}
-			return fmt.Errorf("unknown format %q (json, md, csv, html, pdf)", format)
+			return fmt.Errorf("unknown format %q (json, md, csv, html, pdf, nessus)", format)
 		},
 	}
-	exp.Flags().StringVar(&format, "format", "md", "json, md, csv, html or pdf (pdf needs Chrome/Chromium/weasyprint)")
+	exp.Flags().StringVar(&format, "format", "md", "json, md, csv, html, nessus (.nessus v2) or pdf (pdf needs Chrome/Chromium/weasyprint)")
 	exp.Flags().StringVarP(&outFile, "output", "o", "", "write to a file (mode 0600) instead of stdout")
 	exp.Flags().StringVar(&accuracy, "accuracy", "", "override the scan's report accuracy (normal or avoid-false-alarms)")
 	cmd.AddCommand(exp)

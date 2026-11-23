@@ -25,6 +25,9 @@ type scanOptions struct {
 	timing                                                              string
 	sshUser, sshKey, sshPassEnv, sshPassphraseEnv, sshLabel, knownHosts string
 	sshPort                                                             int
+	winrmUser, winrmPassEnv, winrmLabel                                 string
+	winrmPort                                                           int
+	winrmHTTP, winrmInsecure                                            bool
 	trustNew                                                            bool
 	home                                                                string
 	template                                                            string
@@ -82,6 +85,12 @@ Targets are IPs, CIDRs or hostnames. Public addresses are refused unless
 	f.StringVar(&o.sshLabel, "ssh-label", "", "label recorded with the scan to identify this credential set (default: the user name)")
 	f.StringVar(&o.knownHosts, "known-hosts", "", "known_hosts file used to verify hosts (default ~/.ssh/known_hosts)")
 	f.BoolVar(&o.trustNew, "trust-new-hosts", false, "trust unknown SSH host keys on first use and pin them in ~/.babylon/known_hosts (changed keys are still rejected)")
+	f.StringVar(&o.winrmUser, "winrm-user", "", "Windows user for credentialed audits over WinRM (template: credentialed)")
+	f.StringVar(&o.winrmPassEnv, "winrm-password-env", "", "name of an environment variable holding the WinRM password (never pass secrets as flags)")
+	f.IntVar(&o.winrmPort, "winrm-port", 0, "WinRM port (default 5986 for HTTPS, 5985 with --winrm-http)")
+	f.BoolVar(&o.winrmHTTP, "winrm-http", false, "use WinRM over HTTP (port 5985); NTLM message encryption still protects the data")
+	f.BoolVar(&o.winrmInsecure, "winrm-insecure-tls", false, "accept self-signed WinRM HTTPS certificates (common on Windows; weakens server identity checks)")
+	f.StringVar(&o.winrmLabel, "winrm-label", "", "label recorded with the scan to identify this credential set (default: the user name)")
 	f.Uint64Var(&o.maxHosts, "max-hosts", 0, "refuse scans expanding to more addresses than this (default 1048576)")
 	return cmd
 }
@@ -112,6 +121,16 @@ func runScan(ctx context.Context, out, errw io.Writer, o scanOptions, args []str
 		}
 		a.SSH = creds
 		a.HostKeys = audit.HostKeyPolicy{KnownHosts: o.knownHosts, TrustNew: o.trustNew}
+	}
+	wcreds, err := o.winCreds()
+	if err != nil {
+		return err
+	}
+	if wcreds != nil {
+		if o.template != policy.TemplateCredentialed && o.resume == 0 {
+			return fmt.Errorf("--winrm-* options need --template %s", policy.TemplateCredentialed)
+		}
+		a.Win = wcreds
 	}
 	a.AllowSudo = true // an interactive user may use sudo; `sudo -n` fails safely without a cached ticket
 
@@ -315,6 +334,28 @@ func (o scanOptions) sshCreds() (*audit.Creds, error) {
 	}
 	if c.KeyPath == "" && c.Password == "" {
 		return nil, fmt.Errorf("give --ssh-key or --ssh-password-env")
+	}
+	return c, nil
+}
+
+// winCreds builds in-memory WinRM credentials from flags and the environment.
+func (o scanOptions) winCreds() (*audit.WinCreds, error) {
+	if o.winrmUser == "" && o.winrmPassEnv == "" {
+		return nil, nil
+	}
+	if o.winrmUser == "" {
+		return nil, fmt.Errorf("--winrm-user is required")
+	}
+	if o.winrmPassEnv == "" {
+		return nil, fmt.Errorf("give --winrm-password-env (the name of an environment variable holding the password)")
+	}
+	pw := os.Getenv(o.winrmPassEnv)
+	if pw == "" {
+		return nil, fmt.Errorf("environment variable %s is empty or unset", o.winrmPassEnv)
+	}
+	c := &audit.WinCreds{User: o.winrmUser, Password: pw, Port: o.winrmPort, HTTP: o.winrmHTTP, SkipVerify: o.winrmInsecure, Label: o.winrmLabel}
+	if c.Label == "" {
+		c.Label = o.winrmUser
 	}
 	return c, nil
 }

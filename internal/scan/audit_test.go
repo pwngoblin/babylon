@@ -36,7 +36,7 @@ func ubuntuHost() mapRunner {
 				"openssh-server\t1:8.9p1-3ubuntu0.13\tinstall ok installed\tamd64\topenssh\t1:8.9p1-3ubuntu0.13\n" +
 				"bash\t5.1-6ubuntu1.1\tinstall ok installed\tamd64\tbash\t5.1-6ubuntu1.1\n"
 		case strings.HasPrefix(c, "sshd -T"):
-			r[c] = "permitrootlogin yes\npasswordauthentication yes\npermitemptypasswords no\nx11forwarding no\nciphers chacha20-poly1305@openssh.com\nmacs hmac-sha2-256\n"
+			r[c] = "permitrootlogin yes\npasswordauthentication yes\npermitemptypasswords no\nx11forwarding no\nciphers chacha20-poly1305@openssh.com\nmacs hmac-sha2-256\nmaxauthtries 3\nclientaliveinterval 300\n"
 		case strings.HasPrefix(c, "stat -c"):
 			r[c] = "644 root root /etc/passwd\n640 root shadow /etc/shadow\n"
 		}

@@ -46,7 +46,8 @@ type Options struct {
 
 	timingHostTimeout time.Duration // set from the timing profile
 
-	Audit *AuditConfig // credentials for the credentialed stage (in memory only); nil disables it
+	WinAudit *WinAuditConfig // WinRM credentials for Windows hosts (in memory only); nil disables it
+	Audit    *AuditConfig    // credentials for the credentialed stage (in memory only); nil disables it
 }
 
 func (o *Options) defaults() {
@@ -168,6 +169,13 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 			deps = append(deps, StageCPEMatch) // banner guesses must exist before the audit can supersede them
 		}
 		stages = append(stages, auditStage(st, opt.Audit, deps))
+	}
+	if res.Template.Audit && res.Template.Ports != "" && opt.WinAudit != nil {
+		deps := []string{StagePortscan}
+		if res.Template.CPEMatch {
+			deps = append(deps, StageCPEMatch)
+		}
+		stages = append(stages, winAuditStage(st, opt.WinAudit, deps))
 	}
 	return stages, nil
 }

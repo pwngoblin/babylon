@@ -39,6 +39,13 @@ All native, mock-tested, read-only. Probe-level ones need `--allow-active`.
 - Containers (credentialed SSH audit): new allowlisted `docker info`/`ps`/`inspect` command and rules DOCKER-001..005 (privileged, docker.sock mount, host namespaces/paths, dangerous capabilities, running as root). Output format verified against the real local Docker daemon. Unknown when Docker is absent or inaccessible.
 - Not run live: the network-service, SNMP, TLS and DB probes were tested against mocks only (the lab has none of those services except TLS-less web).
 
+## Nessus parity pass (2026-11-23)
+- `.nessus` (NessusClientData_v2) export: CLI `--format nessus`, web "Export .nessus". Babylon plugin ids are 9,000,000+ (never real Tenable ids). Test checks well-formed XML and stripping of illegal characters. Import not built.
+- Hardening baseline: 15 more Linux rules (accounts, password policy, legacy services, /tmp, permissions, network sysctl, ASLR, SSH extras, logging, time sync, automatic updates); new allowlisted read-only commands; unknown never passes. Live-checked on the Ubuntu lab container.
+- Scheduler: `schedule` table (migration 6), `babylon serve` runs due scans every minute, API `/api/schedules`, "Schedules" page and a Repeat choice on New scan. Scope file and concurrency limits apply to scheduled runs. Credentialed scans cannot be scheduled.
+- Windows credentialed audit (WinRM, NTLM with message encryption): `update-feeds --only msrc` downloads Microsoft bulletins (12 months by default; 12,319 fixes across 66 builds parsed from the real October 2026 file). The host's build and update revision are compared with the first fixed revision per CVE; findings group into "Missing Windows updates". 15 rules WIN-001..015 (SMBv1, signing, firewall, Defender, NLA, UAC, WDigest, LM level, Guest, password policy, admins, LLMNR, update age, end of support). Fixed read-only PowerShell allowlist enforced in code. Tested with a fake host, not a real Windows machine: the WinRM transport (`audit/winrm.go`) has never connected to one.
+- Not built: `.nessus` import, macOS patch audit, per-control compliance report section.
+
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
 - No Greenbone/OpenVAS or Tenable content. Non-destructive checks only. Credentials come from env vars per scan and are never stored.

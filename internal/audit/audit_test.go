@@ -167,6 +167,7 @@ func TestRules(t *testing.T) {
 		Listening: []Socket{{Proto: "tcp", Addr: "0.0.0.0", Port: 22}, {Proto: "tcp", Addr: "127.0.0.1", Port: 6379}},
 		Docker:    ParseDocker("24.0.7\n/db|postgres:16|false|bridge||postgres|/data:/var/lib/pg,|[]\n"),
 	}
+	addBaseline(good, true)
 	for _, r := range Rules {
 		if res := r.Eval(good); res.Status != Pass {
 			t.Errorf("%s on a hardened host = %v (%s)", r.ID, res.Status, res.Evidence)
@@ -180,6 +181,7 @@ func TestRules(t *testing.T) {
 		Listening: []Socket{{Proto: "tcp", Addr: "0.0.0.0", Port: 6379, Process: "redis"}, {Proto: "tcp", Addr: "::", Port: 2375}},
 		Docker:    ParseDocker(dockerSample),
 	}
+	addBaseline(bad, false)
 	for _, r := range Rules {
 		res := r.Eval(bad)
 		if res.Status != Fail || res.Evidence == "" || res.Remediation == "" {
@@ -210,7 +212,7 @@ func TestAllowlistIsReadOnly(t *testing.T) {
 	// Every command segment must start with a known read-only binary.
 	safe := map[string]bool{"cat": true, "uname": true, "dpkg-query": true, "rpm": true, "apk": true, "sw_vers": true,
 		"brew": true, "sshd": true, "/usr/sbin/sshd": true, "ufw": true, "firewall-cmd": true, "iptables": true,
-		"nft": true, "ss": true, "netstat": true, "stat": true, "sysctl": true}
+		"nft": true, "ss": true, "netstat": true, "stat": true, "sysctl": true, "systemctl": true}
 	for _, c := range AllowedCommands() {
 		if c == cmdDocker {
 			continue // the one command with a pipe; checked by TestDockerCommandIsAllowlistedAndReadOnly

@@ -38,12 +38,23 @@ export PW='your-ssh-password'
 ./babylon scan 10.0.0.5 -t credentialed --ssh-user audit --ssh-password-env PW --trust-new-hosts
 ```
 
+Scan a **Windows** host over WinRM (missing Microsoft updates plus security settings):
+
+```
+./babylon update-feeds --only msrc            # Microsoft fix data (about 30 MB per month)
+export WPW='your-windows-password'
+./babylon scan 10.0.0.8 -t credentialed --winrm-user scanner --winrm-password-env WPW --winrm-insecure-tls
+```
+
+Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus` file. Schedules: pick "Repeat" when you start a scan in the web UI.
+
 ## What it does
 
 - **Finds** hosts, ports, services and TLS problems (Nmap).
 - **Checks** web apps and services for known CVEs and misconfigurations (Nuclei plus its own checks).
 - **Matches** software versions to CVEs (NVD), and marks how sure it is: `confirmed`, `firm` or `tentative`.
-- **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and check settings like `sshd_config`.
+- **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and run about 30 hardening checks (accounts, services, network and kernel settings, Docker).
+- **Logs in to Windows over WinRM** (read-only) to find missing Microsoft updates (MSRC data) and check 15 security settings.
 - **Ranks** results by actively exploited (CISA KEV), severity and exploit likelihood (EPSS).
 - **Shows** results in a local web UI with filters and sortable columns.
 - **Groups** results: "upgrade OpenSSL, fixes 24 CVEs" instead of 24 separate rows.

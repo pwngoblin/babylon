@@ -21,6 +21,7 @@ type Facts struct {
 	Listening []Socket
 	Files     []FileInfo
 	Sysctl    map[string]string
+	Baseline  *Baseline   // extra facts for the hardening rules (nil when not collected)
 	Docker    *DockerInfo // nil when Docker is absent or not accessible to the audit account
 	Errors    []string    // collection steps that failed (reported, never fatal)
 }

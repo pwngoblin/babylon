@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"encoding/xml"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,5 +153,41 @@ func TestWriteHTMLSelfContainedAndEscaped(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
+	}
+}
+
+func TestWriteNessus(t *testing.T) {
+	cvss := 9.8
+	r := &Report{Scan: ScanInfo{ID: 7, Template: "basic", StartedAt: "2026-11-23T10:00:00Z"},
+		Hosts: []Host{{Address: "10.0.0.5", OS: "Linux", Services: []Service{{Port: 80, Proto: "tcp", Name: "http"}}}, {Address: "10.0.0.6"}},
+		Findings: []Finding{{Severity: "critical", Title: "Evil \x00 <b>title</b>", Host: "10.0.0.5", Port: 80, Proto: "tcp", Family: "Web",
+			CVEs: []string{"CVE-2021-41773"}, CVSS: &cvss, KEV: true, Description: "d\x01", Evidence: "]]> & stuff"}}}
+	var b bytes.Buffer
+	if err := WriteNessus(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	var d struct {
+		Report struct {
+			Hosts []struct {
+				Name  string `xml:"name,attr"`
+				Items []struct {
+					Severity int    `xml:"severity,attr"`
+					Plugin   int    `xml:"pluginID,attr"`
+					Svc      string `xml:"svc_name,attr"`
+					CVE      string `xml:"cve"`
+					Name     string `xml:"pluginName,attr"`
+				} `xml:"ReportItem"`
+			} `xml:"ReportHost"`
+		} `xml:"Report"`
+	}
+	if err := xml.Unmarshal(b.Bytes(), &d); err != nil {
+		t.Fatalf("output is not well-formed XML: %v\n%s", err, b.String())
+	}
+	if len(d.Report.Hosts) != 2 || d.Report.Hosts[0].Name != "10.0.0.5" {
+		t.Fatalf("hosts: %+v", d.Report.Hosts)
+	}
+	it := d.Report.Hosts[0].Items[0]
+	if it.Severity != 4 || it.CVE != "CVE-2021-41773" || it.Svc != "http" || it.Plugin < 9_000_000 || strings.ContainsRune(it.Name, 0) {
+		t.Errorf("item: %+v", it)
 	}
 }
