@@ -19,7 +19,7 @@ import (
 	"babylon/internal/store"
 )
 
-var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv", "msrc"}
+var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv", "msrc", "exploitdb", "metasploit"}
 
 type feedsOptions struct {
 	home         string
@@ -47,6 +47,8 @@ func newFeedsCmd() *cobra.Command {
   cvelist           CVE Program records: version ranges for CVEs NVD has not analysed yet
   osv               OSV.dev ecosystem dumps (Debian, Ubuntu, Alpine, Rocky, Alma, PyPI, npm, Go)
   msrc              Microsoft security bulletins: Windows fix revisions (powers the Windows patch audit)
+  exploitdb         Exploit-DB index: which CVEs have a public exploit (metadata only, no code)
+  metasploit        Metasploit module index: which CVEs have a module (metadata only, no code)
 
 Downloads are conditional (ETag / Last-Modified), so repeat runs are quick. The
 first NVD sync pages through ~430k CVEs: about 25 minutes without an API key,
@@ -130,6 +132,18 @@ func runFeeds(ctx context.Context, out io.Writer, o feedsOptions) error {
 			fmt.Fprintln(out, "EPSS ...")
 			n, changed, err := intel.SyncEPSS(ctx, fetch, st, "")
 			reportSync(out, "epss", n, changed, err)
+			return err
+		})
+		run("exploitdb", func() error {
+			fmt.Fprintln(out, "Exploit-DB index ...")
+			n, changed, err := intel.SyncExploitDB(ctx, fetch, st, "")
+			reportSync(out, "exploitdb", n, changed, err)
+			return err
+		})
+		run("metasploit", func() error {
+			fmt.Fprintln(out, "Metasploit module index ...")
+			n, changed, err := intel.SyncMetasploit(ctx, fetch, st, "")
+			reportSync(out, "metasploit", n, changed, err)
 			return err
 		})
 		run("nvd", func() error {

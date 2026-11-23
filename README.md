@@ -55,7 +55,7 @@ Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus`
 - **Matches** software versions to CVEs (NVD), and marks how sure it is: `confirmed`, `firm` or `tentative`.
 - **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and run about 30 hardening checks (accounts, services, network and kernel settings, Docker).
 - **Logs in to Windows over WinRM** (read-only) to find missing Microsoft updates (MSRC data) and check 15 security settings.
-- **Ranks** results by actively exploited (CISA KEV), severity and exploit likelihood (EPSS).
+- **Ranks** results by actively exploited (CISA KEV), public exploit availability (Exploit-DB, Metasploit; metadata only), severity and exploit likelihood (EPSS).
 - **Shows** results in a local web UI with filters and sortable columns.
 - **Groups** results: "upgrade OpenSSL, fixes 24 CVEs" instead of 24 separate rows.
 

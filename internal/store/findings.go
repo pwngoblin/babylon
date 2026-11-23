@@ -142,6 +142,7 @@ func (s *Store) RecordFinding(ctx context.Context, scanID int64, f model.Finding
 			if _, err := tx.Exec(`UPDATE finding SET
 				kev = EXISTS(SELECT 1 FROM finding_cve fc JOIN kev k ON k.cve_id=fc.cve_id WHERE fc.finding_id=finding.id),
 				epss = (SELECT MAX(e.score) FROM finding_cve fc JOIN epss e ON e.cve_id=fc.cve_id WHERE fc.finding_id=finding.id),
+				`+exploitSourcesExpr+`,
 				cvss_score = COALESCE(cvss_score, (SELECT MAX(c.cvss_v3) FROM finding_cve fc JOIN cve c ON c.cve_id=fc.cve_id WHERE fc.finding_id=finding.id))
 				WHERE id=?`, fid); err != nil {
 				return err
@@ -189,6 +190,7 @@ type FindingRow struct {
 	Version     string
 	CVEs        []string
 	KEV         bool
+	Exploits    []string // public exploit sources: exploitdb, metasploit
 	Synopsis    string
 	Description string
 	Remediation string
@@ -204,7 +206,7 @@ type FindingRow struct {
 func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence string) ([]FindingRow, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT f.id, a.address, COALESCE(f.port,0), COALESCE(f.proto,''), f.title, COALESCE(f.family,''),
 		f.severity, f.cvss_score, f.kev, COALESCE(f.synopsis,''), COALESCE(f.description,''), COALESCE(f.remediation,''),
-		f.confidence, f.detection, f.epss, COALESCE(f.product,''), COALESCE(f.version,'')
+		f.confidence, f.detection, f.epss, COALESCE(f.product,''), COALESCE(f.version,''), COALESCE(f.exploit_sources,'')
 		FROM finding f JOIN asset a ON a.id=f.asset_id
 		WHERE f.id IN (SELECT finding_id FROM finding_occurrence WHERE scan_id=?)`, scanID)
 	if err != nil {
@@ -215,8 +217,9 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 		var r FindingRow
 		var cvss, epss sql.NullFloat64
 		var kev int
+		var exploits string
 		if err := rows.Scan(&r.ID, &r.Address, &r.Port, &r.Proto, &r.Title, &r.Family, &r.Severity, &cvss, &kev,
-			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection, &epss, &r.Product, &r.Version); err != nil {
+			&r.Synopsis, &r.Description, &r.Remediation, &r.Confidence, &r.Detection, &epss, &r.Product, &r.Version, &exploits); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -229,6 +232,9 @@ func (s *Store) ListFindings(ctx context.Context, scanID int64, minConfidence st
 			r.EPSS = &v
 		}
 		r.KEV = kev == 1
+		if exploits != "" {
+			r.Exploits = strings.Split(exploits, ",")
+		}
 		if minConfidence == "" || model.ConfidenceRank(r.Confidence) >= model.ConfidenceRank(minConfidence) {
 			out = append(out, r)
 		}
@@ -335,13 +341,16 @@ func (s *Store) CheckRunCounts(ctx context.Context, scanID int64) (map[string]in
 }
 
 // PriorityLess orders findings for display: KEV first, then confidence,
-// CVSS, EPSS; severity, host and title break ties for a stable order.
+// public exploit available, CVSS, EPSS; severity, host and title break ties for a stable order.
 func PriorityLess(x, y FindingRow) bool {
 	if x.KEV != y.KEV {
 		return x.KEV
 	}
 	if cx, cy := model.ConfidenceRank(x.Confidence), model.ConfidenceRank(y.Confidence); cx != cy {
 		return cx > cy
+	}
+	if ex, ey := len(x.Exploits) > 0, len(y.Exploits) > 0; ex != ey {
+		return ex
 	}
 	if vx, vy := deref(x.CVSS), deref(y.CVSS); vx != vy {
 		return vx > vy

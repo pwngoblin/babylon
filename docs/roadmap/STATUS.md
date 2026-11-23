@@ -1,6 +1,6 @@
 # Roadmap status (resume file)
 
-Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/releases/tag/v0.1.0). Everything below is committed on `main` (8ee4453). The forward-looking plan is in [ROADMAP.md](ROADMAP.md).
+Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/releases/tag/v0.1.0). Everything below is committed on `main` (3c4776c, after v0.1.0). The forward-looking plan is in [ROADMAP.md](ROADMAP.md).
 
 ## At a glance
 
@@ -17,7 +17,14 @@ Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/r
 | Scope allow-list (`~/.babylon/scope.txt`) | done |
 | Timing profiles (standard, fast-lan, polite) | done |
 | Windows build | compiles, never run |
-| WinRM audit, macOS advisories, web-app scanning, exploit tags | not built (see ROADMAP.md) |
+| Windows credentialed audit (WinRM + MSRC, 15 rules) | done; tested against a fake host only |
+| Native infrastructure checks (~30: network services, SNMP, TLS, DB, Docker, Windows unauth) | done; mock-tested only |
+| Linux hardening baseline (~30 rules incl. Docker) | done |
+| Scheduler (`babylon serve` + Schedules page) | done |
+| `.nessus` export | done (import not built) |
+| Exploit availability tags (Exploit-DB, Metasploit metadata; `update-feeds --only exploitdb,metasploit`) | done; unit-tested; live feeds download and parse (33,568 Exploit-DB + 2,733 Metasploit CVE links) |
+| macOS advisories, triage, asset inventory | not built (see ROADMAP.md) |
+| Web-app scanning (DAST) | out of scope, separate project |
 
 ## Added after the M01-M04 work (2026-11-23)
 - Findings table sorting in the web UI (click a header: natural order, reverse, default).
@@ -45,6 +52,9 @@ All native, mock-tested, read-only. Probe-level ones need `--allow-active`.
 - Scheduler: `schedule` table (migration 6), `babylon serve` runs due scans every minute, API `/api/schedules`, "Schedules" page and a Repeat choice on New scan. Scope file and concurrency limits apply to scheduled runs. Credentialed scans cannot be scheduled.
 - Windows credentialed audit (WinRM, NTLM with message encryption): `update-feeds --only msrc` downloads Microsoft bulletins (12 months by default; 12,319 fixes across 66 builds parsed from the real October 2026 file). The host's build and update revision are compared with the first fixed revision per CVE; findings group into "Missing Windows updates". 15 rules WIN-001..015 (SMBv1, signing, firewall, Defender, NLA, UAC, WDigest, LM level, Guest, password policy, admins, LLMNR, update age, end of support). Fixed read-only PowerShell allowlist enforced in code. Tested with a fake host, not a real Windows machine: the WinRM transport (`audit/winrm.go`) has never connected to one.
 - Not built: `.nessus` import, macOS patch audit, per-control compliance report section.
+
+## Exploit availability (2026-11-23)
+Feeds `exploitdb` (files_exploits.csv) and `metasploit` (modules_metadata_base.json, exploit modules only) store CVE-to-exploit ids in `exploit_ref` (migration 8; table existed from 0001). Findings carry `exploit_sources`, refreshed on every feed update and on record. Ranking: KEV, confidence, public exploit, CVSS, EPSS. Shown in the web UI (badge), HTML/MD/CSV/JSON (`public_exploits`) and `.nessus` (`exploit_available`, `exploit_framework_metasploit`). Metadata only, no exploit code is downloaded. 
 
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
@@ -92,10 +102,11 @@ Done and tested (`go test -short -race ./...` green):
 Live acceptance (Docker lab: `babylon-ssh-ubuntu` 12301 ubuntu:20.04, `babylon-ssh-debian` 12302 debian:12, `babylon-ssh-alpine` 12303 alpine:3.17; user `audit`/`labpass123`): Alpine result equals `apk upgrade --simulate` exactly (musl, openssl 3.0.15-r0→3.0.19-r0, openssh not flagged); Ubuntu glibc CVE-2025-4802 matches `apt list --upgradable` security pocket; Debian 12 clean. Banner guess "OpenSSH 9.1 — 34 CVEs" on Alpine was superseded.
 Gaps: macOS (sw_vers/brew collected but no advisory source), Windows/WinRM, RHEL-family not live-tested (unit tests only), sudo for root-only data (sshd -T, firewall, ss -p) not supported, no web UI credential entry, no key-auth live test, OSV Ubuntu pockets (ESM/Pro) not matched, kernel package CVEs depend on OSV quality.
 
-## Milestone 03: UDP + native checks + speed: speed profiles DONE (2026-11-23); UDP and new native checks NOT STARTED
+## Milestone 03: UDP + native checks + speed: DONE (2026-11-23)
+UDP stage, native checks and speed profiles are all built; see "Do all" pass and "Infrastructure checks" above. The TODO line below is historical.
 Done: `internal/policy/timing.go` profiles `standard` (unchanged defaults), `fast-lan` (-T4, 1 retry, rtt 400ms/100ms, script-timeout 15s, 2x packet rate, Nuclei 300 rps; private targets only, enforced in `app.Create`), `polite` (-T2, 3 retries, 120s scripts, 40% rate, Nuclei 25 rps). CLI `--timing`, web request field `timing`, persisted in scan flags so resume keeps it. Tests: nmap argv per profile, unknown name rejected, lastAddr.
 Measured on the 5-port lab scan (127.0.0.1, unprivileged): standard 57.9s, fast-lan 42.4s, identical 158 findings. Where the time goes: -sV ~11s fixed, NSE ssl-cert/ssl-enum-ciphers hang ~30s on non-TLS ports (STARTTLS probes on ftp/redis), other scripts ~15s. An extra `ssl-enum-ciphers.timeout` arg lost a script result, so it was not adopted.
-TODO next: targeted UDP stage (15 ports), ~20 native checks with mock-listener tests, a smarter TLS-script guard (only run ssl-* where TLS is plausible) to cut the remaining time.
+Historical TODO (since done, except the TLS-script guard): targeted UDP stage (15 ports), ~20 native checks with mock-listener tests, a smarter TLS-script guard (only run ssl-* where TLS is plausible) to cut the remaining time.
 
 ## Detection breadth work (2026-11-23)
 - `--deep`: run every policy-allowed Nuclei template per service (not only tech-matched). Lab: 4m40s vs 1m20s, 307 vs 301 findings. Denied tags/protocols still excluded (tested).
@@ -103,12 +114,12 @@ TODO next: targeted UDP stage (15 ports), ~20 native checks with mock-listener t
 - README rewritten short (install, use, what it does).
 - Ideas not built yet: cvelistV5/Vulnrichment merge (2026 CVE CPE gap), exploit availability (ExploitDB/Metasploit metadata), KEV-product watch, retire.js-style JS library versions, favicon/header/meta-generator fingerprints, trivy for lockfiles on audited hosts, more native checks.
 
-## "Do all" pass (2026-11-23, uncommitted)
+## "Do all" pass (2026-11-23, committed)
 - Security fixes: Chrome sandbox kept for PDF (opt-out env BABYLON_PDF_NO_SANDBOX=1), 4 GiB cap per feed download, SSH first-use key fingerprint printed, `BABYLON_<TOOL>` absolute-path override for nmap/nuclei/etc.
 - Windows builds (runner split into proc_unix.go / proc_windows.go, taskkill). Not run on Windows yet.
 - Scale: scan chunk 128 -> 16 hosts, per-host timeout from timing profile (fast-lan 8m). Cause of the 44-host stall was one giant job; fix is unverified at scale (only loopback may be scanned).
 - New detection: `--deep` Nuclei; web versions -> CVE matcher; KEV product watch (tentative, product known, version unknown); UDP stage (17 ports, needs root/sudo, skip reason recorded otherwise); native probes (Docker API, Kubelet x2, Elasticsearch, CouchDB, etcd, HSTS) only with --allow-active, mock-server tests; cvelistV5 feed (`update-feeds --only cvelist`, NVD always wins): 62,342 CVEs gained ranges, lab 301 -> 310 findings.
-- Not done: Windows credentialed audit (WinRM), macOS advisories, web-app (DAST) mode, exploit-availability tags, Windows live test.
+- Not done at that time: Windows credentialed audit (since built), macOS advisories, web-app (DAST) mode, exploit-availability tags, Windows live test.
 
 ## Milestone 04: HTML/PDF reports: v0.1 DONE (2026-11-23)
 `internal/report/html.go` (self-contained, CSP meta, no JS, data-driven: sections come from Groups/Hosts/Family, so new finding types need no template change; optional `familyInfo` for titles), `pdf.go` (Chrome/Chromium/weasyprint), `doctor` reports PDF renderer, CLI `scans export --format html|pdf`, web `Export HTML` button + `?format=html`. Test: escaping + no external refs. TODO: per-host credentialed-audit status block (after M02), richer coverage appendix.

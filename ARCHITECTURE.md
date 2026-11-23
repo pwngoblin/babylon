@@ -57,7 +57,7 @@ Nessus/OpenVAS get coverage from a huge plugin library. Without that feed, Babyl
         │    group · prioritize · diff                │
         └───────────────────┬─────────────────────────┘
                             ▼
-              HTML · Markdown · JSON · (.nessus export, Phase 3)
+              HTML · Markdown · JSON · CSV · PDF · .nessus export
 ```
 
 Stage 3 engines are independent and run in parallel per chunk; stage 3d runs only for hosts with credentials.
@@ -392,7 +392,7 @@ Raw engine output is on disk; credentials are never stored in the DB.
 
 ## 10. Implementation plan
 
-> Status (2026-11-23): see `docs/roadmap/STATUS.md`. Built: phase 1, Linux credentialed audits, UDP stage, active API probes, cvelistV5 feed, KEV watch, timing profiles, scope allow-list. Not built: macOS/Windows audits, web-app mode, exploit tags. Also note the credentials section below describes the target design; today credentials come from env vars per scan and are never stored.
+> Status (2026-11-23): see `docs/roadmap/STATUS.md`. Built: phase 1, Linux credentialed audits, Windows WinRM + MSRC audit (not yet run on a real host), UDP stage, ~30 native checks, active API probes, cvelistV5 feed, KEV watch, timing profiles, scope allow-list, scheduler, `.nessus` export, Linux hardening baseline. Exploit availability tags (Exploit-DB, Metasploit metadata) built. Not built: macOS audit, `.nessus` import. Web-app scanning is out of scope (separate project); remote agents dropped. Also note the credentials section below describes the target design; today credentials come from env vars per scan and are never stored.
 
 **Phase 0: Spike (≈1 week), de-risk coverage**
 - Build a lab (Metasploitable-class, DVWA, several unpatched distro VMs/containers) with an **expected-findings manifest**.

@@ -93,6 +93,7 @@ type Finding struct {
 	CVSS        *float64 `json:"cvss_score,omitempty"`
 	EPSS        *float64 `json:"epss_score,omitempty"`
 	KEV         bool     `json:"kev"`
+	Exploits    []string `json:"public_exploits,omitempty"` // sources with a public exploit: exploitdb, metasploit
 	Product     string   `json:"product,omitempty"`
 	Version     string   `json:"version,omitempty"`
 	Synopsis    string   `json:"synopsis,omitempty"`
@@ -105,19 +106,20 @@ type Finding struct {
 
 // Group is a root cause: several CVE findings from one outdated product.
 type Group struct {
-	Title      string   `json:"title"`
-	Host       string   `json:"host"`
-	Port       int      `json:"port"`
-	Proto      string   `json:"proto"`
-	Product    string   `json:"product"`
-	Version    string   `json:"version"`
-	Severity   string   `json:"severity"`
-	Confidence string   `json:"confidence"` // weakest member
-	KEVCount   int      `json:"kev_count"`
-	MaxCVSS    *float64 `json:"max_cvss,omitempty"`
-	MaxEPSS    *float64 `json:"max_epss,omitempty"`
-	CVEs       []string `json:"cve_ids"`
-	Fix        string   `json:"remediation"`
+	Title        string   `json:"title"`
+	Host         string   `json:"host"`
+	Port         int      `json:"port"`
+	Proto        string   `json:"proto"`
+	Product      string   `json:"product"`
+	Version      string   `json:"version"`
+	Severity     string   `json:"severity"`
+	Confidence   string   `json:"confidence"` // weakest member
+	KEVCount     int      `json:"kev_count"`
+	ExploitCount int      `json:"exploit_count,omitempty"` // CVEs with a public exploit
+	MaxCVSS      *float64 `json:"max_cvss,omitempty"`
+	MaxEPSS      *float64 `json:"max_epss,omitempty"`
+	CVEs         []string `json:"cve_ids"`
+	Fix          string   `json:"remediation"`
 }
 
 type Coverage struct {
@@ -206,7 +208,7 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 		shown = append(shown, f)
 		r.Findings = append(r.Findings, Finding{
 			Severity: f.Severity, Confidence: f.Confidence, Detection: f.Detection, Title: f.Title, Host: f.Address,
-			Port: f.Port, Proto: f.Proto, Family: f.Family, CVEs: f.CVEs, CVSS: f.CVSS, EPSS: f.EPSS, KEV: f.KEV, Product: f.Product, Version: f.Version, Synopsis: f.Synopsis,
+			Port: f.Port, Proto: f.Proto, Family: f.Family, CVEs: f.CVEs, CVSS: f.CVSS, EPSS: f.EPSS, KEV: f.KEV, Exploits: f.Exploits, Product: f.Product, Version: f.Version, Synopsis: f.Synopsis,
 			Description: f.Description, Remediation: f.Remediation, Evidence: f.Evidence, Engines: f.Engines, Possible: possible,
 		})
 	}
@@ -214,7 +216,7 @@ func Build(ctx context.Context, st *store.Store, id int64, accuracy string) (*Re
 	groups, _ := group.Build(shown)
 	for _, g := range groups {
 		r.Groups = append(r.Groups, Group{Title: g.Title, Host: g.Address, Port: g.Port, Proto: g.Proto, Product: g.Product, Version: g.Version,
-			Severity: g.Severity, Confidence: g.Confidence, KEVCount: g.KEVCount, MaxCVSS: g.MaxCVSS, MaxEPSS: g.MaxEPSS, CVEs: g.CVEs, Fix: g.Fix})
+			Severity: g.Severity, Confidence: g.Confidence, KEVCount: g.KEVCount, ExploitCount: g.ExploitCount, MaxCVSS: g.MaxCVSS, MaxEPSS: g.MaxEPSS, CVEs: g.CVEs, Fix: g.Fix})
 	}
 
 	jobs, err := st.ListJobs(ctx, id)
@@ -281,14 +283,14 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 
 	if len(r.Groups) > 0 {
 		fmt.Fprintf(&b, "## Priority action plan (%d root causes)\n\n", len(r.Groups))
-		b.WriteString("| Severity | Host | Root cause | KEV | Max CVSS | Confidence | Action |\n|---|---|---|---|---|---|---|\n")
+		b.WriteString("| Severity | Host | Root cause | KEV | Public exploit | Max CVSS | Confidence | Action |\n|---|---|---|---|---|---|---|---|\n")
 		for _, g := range r.Groups {
 			cvss := ""
 			if g.MaxCVSS != nil {
 				cvss = fmt.Sprintf("%.1f", *g.MaxCVSS)
 			}
-			fmt.Fprintf(&b, "| %s | %s | %s | %d | %s | %s | %s |\n", strings.ToUpper(g.Severity), cell(fmt.Sprintf("%s:%d", g.Host, g.Port)),
-				cell(g.Title), g.KEVCount, cvss, g.Confidence, cell(g.Fix))
+			fmt.Fprintf(&b, "| %s | %s | %s | %d | %d | %s | %s | %s |\n", strings.ToUpper(g.Severity), cell(fmt.Sprintf("%s:%d", g.Host, g.Port)),
+				cell(g.Title), g.KEVCount, g.ExploitCount, cvss, g.Confidence, cell(g.Fix))
 		}
 		b.WriteString("\nThe individual CVEs behind each item are listed under the findings below.\n\n")
 	}
@@ -420,10 +422,10 @@ func fence(s string) string {
 // interpreted as formulas are neutralized.
 func WriteCSV(w io.Writer, r *Report) error {
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"severity", "confidence", "host", "port", "proto", "title", "cve_ids", "cvss", "epss", "kev", "product", "version", "engines", "family", "remediation"}); err != nil {
+	if err := cw.Write([]string{"severity", "confidence", "host", "port", "proto", "title", "cve_ids", "cvss", "epss", "kev", "public_exploits", "product", "version", "engines", "family", "remediation"}); err != nil {
 		return err
 	}
-	for _, f := range r.Findings { // already in priority order: KEV, confidence, CVSS, EPSS
+	for _, f := range r.Findings { // already in priority order: KEV, confidence, public exploit, CVSS, EPSS
 		cvss := ""
 		if f.CVSS != nil {
 			cvss = fmt.Sprintf("%.1f", *f.CVSS)
@@ -437,7 +439,7 @@ func WriteCSV(w io.Writer, r *Report) error {
 			port = fmt.Sprint(f.Port)
 		}
 		row := []string{f.Severity, f.Confidence, f.Host, port, f.Proto, f.Title, strings.Join(f.CVEs, " "), cvss, epss,
-			fmt.Sprint(f.KEV), f.Product, f.Version, strings.Join(f.Engines, "+"), f.Family, f.Remediation}
+			fmt.Sprint(f.KEV), strings.Join(f.Exploits, "+"), f.Product, f.Version, strings.Join(f.Engines, "+"), f.Family, f.Remediation}
 		for i := range row {
 			row[i] = csvSafe(row[i])
 		}

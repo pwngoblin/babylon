@@ -44,22 +44,24 @@ type nessusTag struct {
 }
 
 type nessusItem struct {
-	Port        int      `xml:"port,attr"`
-	SvcName     string   `xml:"svc_name,attr"`
-	Protocol    string   `xml:"protocol,attr"`
-	Severity    int      `xml:"severity,attr"`
-	PluginID    int      `xml:"pluginID,attr"`
-	PluginName  string   `xml:"pluginName,attr"`
-	Family      string   `xml:"pluginFamily,attr"`
-	CVSS3       string   `xml:"cvss3_base_score,omitempty"`
-	Description string   `xml:"description"`
-	Synopsis    string   `xml:"synopsis"`
-	Solution    string   `xml:"solution"`
-	Risk        string   `xml:"risk_factor"`
-	Output      string   `xml:"plugin_output,omitempty"`
-	CVEs        []string `xml:"cve"`
-	Exploited   string   `xml:"exploited_by_nessus,omitempty"`
-	KEV         string   `xml:"in_the_news,omitempty"`
+	Port         int      `xml:"port,attr"`
+	SvcName      string   `xml:"svc_name,attr"`
+	Protocol     string   `xml:"protocol,attr"`
+	Severity     int      `xml:"severity,attr"`
+	PluginID     int      `xml:"pluginID,attr"`
+	PluginName   string   `xml:"pluginName,attr"`
+	Family       string   `xml:"pluginFamily,attr"`
+	CVSS3        string   `xml:"cvss3_base_score,omitempty"`
+	Description  string   `xml:"description"`
+	Synopsis     string   `xml:"synopsis"`
+	Solution     string   `xml:"solution"`
+	Risk         string   `xml:"risk_factor"`
+	Output       string   `xml:"plugin_output,omitempty"`
+	CVEs         []string `xml:"cve"`
+	Exploited    string   `xml:"exploited_by_nessus,omitempty"`
+	KEV          string   `xml:"in_the_news,omitempty"`
+	ExploitAvail string   `xml:"exploit_available,omitempty"`
+	MSF          string   `xml:"exploit_framework_metasploit,omitempty"`
 }
 
 var nessusSeverity = map[string]int{"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
@@ -146,6 +148,12 @@ func WriteNessus(w io.Writer, r *Report) error {
 		if f.KEV {
 			it.KEV = "true"
 			it.Exploited = "true"
+		}
+		for _, src := range f.Exploits {
+			it.ExploitAvail = "true"
+			if src == "metasploit" {
+				it.MSF = "true"
+			}
 		}
 		h := host(f.Host)
 		h.Items = append(h.Items, it)

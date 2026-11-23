@@ -325,7 +325,7 @@ async function scanView(id, tab) {
           el('td', {}, f.title, f.possible ? el('span', { class: 'badge s-partial', style: 'margin-left:8px' }, 'possible') : null),
           el('td', { class: 'mono' }, f.host + (f.port ? ':' + f.port : '')),
           el('td', {}, (f.cve_ids || []).join(', ')),
-          el('td', {}, f.cvss_score != null ? f.cvss_score.toFixed(1) : '', f.kev ? el('span', { class: 'badge s-failed', style: 'margin-left:6px', title: 'Listed in CISA Known Exploited Vulnerabilities' }, 'KEV') : null, f.epss_score != null ? el('span', { class: 'muted', style: 'margin-left:6px', title: 'EPSS exploit probability' }, 'EPSS ' + (f.epss_score * 100).toFixed(1) + '%') : null),
+          el('td', {}, f.cvss_score != null ? f.cvss_score.toFixed(1) : '', f.kev ? el('span', { class: 'badge s-failed', style: 'margin-left:6px', title: 'Listed in CISA Known Exploited Vulnerabilities' }, 'KEV') : null, (f.public_exploits || []).length ? el('span', { class: 'badge s-partial', style: 'margin-left:6px', title: 'Public exploit: ' + f.public_exploits.join(', ') }, 'exploit') : null, f.epss_score != null ? el('span', { class: 'muted', style: 'margin-left:6px', title: 'EPSS exploit probability' }, 'EPSS ' + (f.epss_score * 100).toFixed(1) + '%') : null),
           el('td', { class: 'muted' }, (f.engines || []).join(' + ')));
         const toggle = () => { detail.hidden = !detail.hidden; row.setAttribute('aria-expanded', String(!detail.hidden)); };
         row.addEventListener('click', toggle);
@@ -365,7 +365,7 @@ async function scanView(id, tab) {
           el('p', {}, ...g.cve_ids.flatMap((c, i) => [i ? ', ' : '', cveLink(c)])));
         const head = el('div', { class: 'row between click', tabindex: 0, role: 'button', 'aria-expanded': 'false' },
           el('span', {}, sevChip(g.severity), ' ', el('b', {}, g.title), el('span', { class: 'muted', style: 'margin-left:8px' }, g.host + ':' + g.port)),
-          el('span', { class: 'muted' }, (g.max_cvss != null ? 'max CVSS ' + g.max_cvss.toFixed(1) : '') + (g.kev_count ? '  · ' + g.kev_count + ' KEV' : '')));
+          el('span', { class: 'muted' }, (g.max_cvss != null ? 'max CVSS ' + g.max_cvss.toFixed(1) : '') + (g.kev_count ? '  · ' + g.kev_count + ' KEV' : '') + (g.exploit_count ? '  · ' + g.exploit_count + ' public exploit' : '')));
         const toggle = () => { detail.hidden = !detail.hidden; head.setAttribute('aria-expanded', String(!detail.hidden)); };
         head.addEventListener('click', toggle);
         head.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });

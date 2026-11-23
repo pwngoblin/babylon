@@ -18,20 +18,21 @@ import (
 
 // Group is one root cause with its member findings.
 type Group struct {
-	Address    string
-	Port       int
-	Proto      string
-	Product    string
-	Version    string
-	Title      string
-	Severity   string
-	Confidence string // weakest member: a group is only as certain as its least certain claim
-	KEVCount   int
-	MaxCVSS    *float64
-	MaxEPSS    *float64
-	CVEs       []string
-	Fix        string // consolidated remediation
-	Members    []store.FindingRow
+	Address      string
+	Port         int
+	Proto        string
+	Product      string
+	Version      string
+	Title        string
+	Severity     string
+	Confidence   string // weakest member: a group is only as certain as its least certain claim
+	KEVCount     int
+	ExploitCount int // member findings with a public exploit
+	MaxCVSS      *float64
+	MaxEPSS      *float64
+	CVEs         []string
+	Fix          string // consolidated remediation
+	Members      []store.FindingRow
 }
 
 type key struct {
@@ -115,6 +116,9 @@ func build(k key, m []store.FindingRow) Group {
 		}
 		if r.KEV {
 			g.KEVCount++
+		}
+		if len(r.Exploits) > 0 {
+			g.ExploitCount++
 		}
 		if r.CVSS != nil && (g.MaxCVSS == nil || *r.CVSS > *g.MaxCVSS) {
 			v := *r.CVSS

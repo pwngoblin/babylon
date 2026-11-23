@@ -42,9 +42,9 @@ Where we're weaker (stated plainly): unauthenticated plugin depth versus Nessus.
 ### Non-goals (v1)
 - Greenbone/OpenVAS feed or scanner, and Tenable/Nessus content (licence; excluded entirely, no opt-in adapter).
 - Exploitation, DoS, destructive checks, fuzzing.
-- Multi-tenant console/RBAC, built-in scheduler/UI (Phase 3 at earliest).
+- Multi-tenant console/RBAC.
 - Compliance attestation (CIS-lite checks only).
-- Deep DAST/web crawling beyond Nuclei.
+- Deep DAST/web crawling beyond Nuclei (a separate project).
 
 ## 5. Journeys
 
@@ -70,7 +70,7 @@ Always denied: DoS, destructive, intrusive NSE/Nuclei categories. Default-creden
 
 ## 7. Scope by phase
 
-> Status (2026-11-23): Phase 1 and the Linux part of Phase 2 are built and released as v0.1.0. Next steps are in `docs/roadmap/ROADMAP.md`.
+> Status (2026-11-23): Phase 1, the Linux and Windows credentialed audits, scheduler, UI and `.nessus` export are built (v0.1.0 plus later commits). Windows audit is not yet run against a real host; macOS audit is not built. Next steps are in `docs/roadmap/ROADMAP.md`.
 
 - **Phase 0 (spike)**: lab + expected-findings manifest; measure coverage and CPE false-positive rate per source; go/no-go per source.
 - **Phase 1 (MVP)**: policy/safety, scalable orchestrator, Nmap + Nuclei + native checks + CPE→CVE, feeds, correlation/dedupe, **HTML/MD/JSON reports with exec summary + branding**.

@@ -117,3 +117,47 @@ func TestDefaultSortKEVThenConfidenceThenCVSSThenEPSS(t *testing.T) {
 		}
 	}
 }
+
+func TestFindingTaggedWithPublicExploitsAndRanked(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id, _ := s.CreateScan(ctx, "a", "basic", []string{"x"}, map[string]any{})
+	_ = s.ReplaceExploits(ctx, "exploitdb", []ExploitEntry{{CVE: "CVE-2020-2", Source: "exploitdb", Ref: "EDB-1"}}, FeedInfo{Name: "exploitdb"})
+	rec := func(port int, title string, cve string, cvss float64) {
+		c := []string{cve}
+		if err := s.RecordFinding(ctx, id, model.Finding{Fingerprint: correlate.Fingerprint("10.0.0.5", port, "tcp", c, ""),
+			Address: "10.0.0.5", Port: port, Proto: "tcp", Title: title, Severity: "high", CVEs: c, Confidence: model.ConfFirm,
+			Detection: "version", Engine: "cpematch"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec(80, "has-exploit", "CVE-2020-2", 5)
+	rec(81, "no-exploit", "CVE-2020-3", 9)
+	// A second feed loaded after the finding exists must refresh it too.
+	_ = s.ReplaceExploits(ctx, "metasploit", []ExploitEntry{{CVE: "CVE-2020-2", Source: "metasploit", Ref: "exploit/x"}}, FeedInfo{Name: "metasploit"})
+	rows, _ := s.ListFindings(ctx, id, "")
+	by := map[string]FindingRow{}
+	for _, r := range rows {
+		by[r.Title] = r
+	}
+	if got := by["has-exploit"].Exploits; len(got) != 2 || got[0] != "exploitdb" || got[1] != "metasploit" {
+		t.Fatalf("exploits = %v", got)
+	}
+	if len(by["no-exploit"].Exploits) != 0 {
+		t.Fatal("no exploit expected")
+	}
+	// With equal KEV and confidence, a public exploit outranks a higher CVSS.
+	hi := by["no-exploit"]
+	hi.CVSS = f64(9.8)
+	if !PriorityLess(by["has-exploit"], hi) {
+		t.Fatal("public exploit must rank above CVSS")
+	}
+	// Replacing a source drops its stale rows from findings.
+	_ = s.ReplaceExploits(ctx, "metasploit", []ExploitEntry{{CVE: "CVE-9", Source: "metasploit", Ref: "y"}}, FeedInfo{Name: "metasploit"})
+	rows, _ = s.ListFindings(ctx, id, "")
+	for _, r := range rows {
+		if r.Title == "has-exploit" && (len(r.Exploits) != 1 || r.Exploits[0] != "exploitdb") {
+			t.Fatalf("stale source kept: %v", r.Exploits)
+		}
+	}
+}
