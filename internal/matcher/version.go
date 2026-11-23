@@ -140,3 +140,30 @@ func CleanVersion(s string) string {
 	}
 	return ""
 }
+
+// ImpreciseVersion explains why a service-reported version cannot be matched
+// against CVE ranges ("" when it is a concrete version). Nmap reports what it
+// cannot pin down as ranges ("9.6.20 - 9.6.23 or 11.14 - 11.18"), wildcards
+// ("2.2.X - 2.3.X") or a bare major ("4"); taking the first number of those
+// would claim a precise version Babylon does not have and flood the report
+// with CVEs of the wrong release.
+func ImpreciseVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if strings.Contains(v, " - ") || strings.Contains(v, " or ") {
+		return "version is a range (" + v + "), not a concrete version: not matched"
+	}
+	clean := CleanVersion(v)
+	if clean == "" {
+		return ""
+	}
+	if wild := strings.IndexAny(clean, "xX*"); wild >= 0 && wild > 0 && (clean[wild-1] == '.' || clean[wild-1] == '-') {
+		return "version has a wildcard (" + clean + "): not matched"
+	}
+	if !strings.ContainsAny(strings.TrimLeft(clean, "0123456789"), ".") && len(strings.TrimLeft(clean, "0123456789")) == 0 {
+		return "version is only a major number (" + clean + "): too imprecise to match"
+	}
+	return ""
+}

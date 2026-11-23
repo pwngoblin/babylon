@@ -163,3 +163,71 @@ func TestCallbackErrorStopsParsing(t *testing.T) {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
 }
+
+func TestHostScriptsOfSMBAreAttachedToThePort(t *testing.T) {
+	xml := `<?xml version="1.0"?><nmaprun><host><status state="up" reason="syn-ack"/><address addr="10.0.0.9" addrtype="ipv4"/>
+<ports>
+<port protocol="tcp" portid="139"><state state="open"/><service name="netbios-ssn"/></port>
+<port protocol="tcp" portid="445"><state state="open"/><service name="microsoft-ds"/></port>
+<port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port>
+</ports>
+<hostscript>
+<script id="smb2-security-mode" output="&#xa;  3.1.1: &#xa;    Message signing enabled but not required"/>
+<script id="smb-os-discovery" output="OS: Windows Server 2012"/>
+<script id="fcrdns" output="FAIL (No PTR record)"/>
+<script id="port-states" output="tcp open"/>
+</hostscript></host><runstats><finished exit="success"/><hosts up="1" down="0" total="1"/></runstats></nmaprun>`
+	var got model.Host
+	if _, err := Parse(strings.NewReader(xml), func(h model.Host) error { got = h; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(p model.Port) []string {
+		var out []string
+		for _, s := range p.Scripts {
+			out = append(out, s.ID)
+		}
+		return out
+	}
+	var p445, p139 model.Port
+	for _, p := range got.Ports {
+		switch p.Number {
+		case 445:
+			p445 = p
+		case 139:
+			p139 = p
+		}
+	}
+	if strings.Join(ids(p445), ",") != "smb2-security-mode,smb-os-discovery" || len(p139.Scripts) != 0 {
+		t.Errorf("445: %v 139: %v (only SMB host scripts belong on the SMB port, once)", ids(p445), ids(p139))
+	}
+
+	// Only NetBIOS open: it takes the results. Nothing open: they are dropped, not misattributed.
+	only139 := strings.Replace(strings.Replace(xml, `portid="445"><state state="open"/>`, `portid="445"><state state="closed"/>`, 1), "x", "x", 1)
+	_, _ = Parse(strings.NewReader(only139), func(h model.Host) error { got = h; return nil })
+	n139 := 0
+	for _, p := range got.Ports {
+		if p.Number == 139 {
+			n139 = len(p.Scripts)
+		}
+	}
+	if n139 != 2 {
+		t.Errorf("139 should receive the SMB scripts when 445 is closed, got %d", n139)
+	}
+}
+
+func TestSSHAlgorithmNamesComeFromTablesWhenOutputOnlyHasCounts(t *testing.T) {
+	xml := `<?xml version="1.0"?><nmaprun><host><status state="up" reason="syn-ack"/><address addr="10.0.0.9" addrtype="ipv4"/>
+<ports><port protocol="tcp" portid="22"><state state="open"/><service name="ssh"/>
+<script id="ssh2-enum-algos" output="&#xa;  kex_algorithms: (2)&#xa;  encryption_algorithms: (1)"><table key="kex_algorithms"><elem>curve25519-sha256</elem><elem>diffie-hellman-group14-sha1</elem></table><table key="encryption_algorithms"><elem>3des-cbc</elem></table></script>
+</port></ports></host><runstats><finished exit="success"/><hosts up="1" down="0" total="1"/></runstats></nmaprun>`
+	var got model.Host
+	if _, err := Parse(strings.NewReader(xml), func(h model.Host) error { got = h; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	out := got.Ports[0].Scripts[0].Output
+	for _, want := range []string{"kex_algorithms: (2)", "diffie-hellman-group14-sha1", "3des-cbc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing from %q", want, out)
+		}
+	}
+}

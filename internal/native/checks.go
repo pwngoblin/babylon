@@ -145,7 +145,10 @@ var memcachedOpen = Check{
 	Needs: scriptNeeds("memcached-info"),
 	Run: func(e *Env) []Finding {
 		return perHit(e, "memcached-info", func(h ScriptHit) *Finding {
-			if !strings.Contains(strings.ToLower(h.Output), "version") {
+			low := strings.ToLower(h.Output)
+			// memcached-info prints "Process ID", "Uptime" and server stats only when the
+			// server answered `stats` without authentication.
+			if !strings.Contains(low, "process id") && !strings.Contains(low, "uptime") && !strings.Contains(low, "version") {
 				return nil
 			}
 			return &Finding{

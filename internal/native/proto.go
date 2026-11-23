@@ -18,23 +18,38 @@ import (
 // itself or to refuse a request that cannot succeed. No login is attempted,
 // no file is read, and no state is changed. All are probe-level (--allow-active).
 
-// udpExchange sends one datagram and returns the first reply.
+// udpExchange sends one datagram and returns the first reply. The socket is
+// not connected: TFTP servers answer from a new ephemeral port (the transfer
+// id), which a connected socket would silently drop. Replies are accepted from
+// any port of the probed address.
 func udpExchange(host string, port int, send []byte) ([]byte, error) {
-	c, err := net.DialTimeout("udp", net.JoinHostPort(host, strconv.Itoa(port)), 3*time.Second)
+	dst, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return nil, err
+	}
+	network := "udp4"
+	if dst.IP.To4() == nil {
+		network = "udp6"
+	}
+	c, err := net.ListenUDP(network, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
-	if _, err := c.Write(send); err != nil {
+	if _, err := c.WriteToUDP(send, dst); err != nil {
 		return nil, err
 	}
 	buf := make([]byte, 4096)
-	n, err := c.Read(buf)
-	if err != nil {
-		return nil, err
+	for {
+		n, from, err := c.ReadFromUDP(buf)
+		if err != nil {
+			return nil, err
+		}
+		if from.IP.Equal(dst.IP) {
+			return buf[:n], nil
+		}
 	}
-	return buf[:n], nil
 }
 
 // ---- LDAP (BER by hand: three small messages) ----

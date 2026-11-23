@@ -187,8 +187,17 @@ func RunHost(ctx context.Context, st *store.Store, scanID int64, env *Env, order
 		if err := st.RecordCheckRun(ctx, scanID, env.AssetID, c.ID, "ran", ""); err != nil {
 			return err
 		}
+		seen := map[string]bool{}
 		for _, f := range findings {
 			mf := toModel(c, env, f)
+			// A check that reports several findings for one port (for example an
+			// end-of-life database that also lacks TLS) must not have them merged
+			// into one by the shared fingerprint: later ones are keyed by title.
+			pk := fmt.Sprintf("%d/%s", mf.Port, mf.Proto)
+			if seen[pk] {
+				mf.Fingerprint = correlate.Fingerprint(env.Address, mf.Port, mf.Proto, nil, correlate.CheckKey("native", c.ID+"#"+f.Title))
+			}
+			seen[pk] = true
 			if err := st.RecordFinding(ctx, scanID, mf); err != nil {
 				return err
 			}

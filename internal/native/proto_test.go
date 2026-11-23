@@ -229,3 +229,26 @@ func TestEPMD(t *testing.T) {
 }
 
 var _ = store.ServiceInfo{}
+
+func TestUDPProbeAcceptsReplyFromAnotherPort(t *testing.T) {
+	// TFTP answers from a fresh transfer-id port, not from port 69.
+	srv, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	go func() {
+		buf := make([]byte, 512)
+		_, from, err := srv.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		reply, _ := net.ListenPacket("udp", "127.0.0.1:0") // different source port
+		defer reply.Close()
+		reply.WriteTo(append([]byte{0, 5, 0, 1}, []byte("File not found\x00")...), from)
+	}()
+	f := tftpRunPort(&Env{Address: "127.0.0.1"}, srv.LocalAddr().(*net.UDPAddr).Port)
+	if len(f) != 1 || !strings.Contains(f[0].Evidence, "ERROR 1") {
+		t.Fatalf("a reply from another port must count: %+v", f)
+	}
+}

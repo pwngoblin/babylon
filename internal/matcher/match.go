@@ -86,6 +86,9 @@ func targets(s Service) []target {
 
 // Match finds CVEs whose vulnerable ranges contain the service's version.
 func Match(ctx context.Context, src Source, s Service) ([]Hit, Stats, error) {
+	if why := ImpreciseVersion(s.Version); why != "" {
+		return nil, Stats{Reason: why}, nil
+	}
 	ts := targets(s)
 	if len(ts) == 0 {
 		return nil, Stats{Reason: "no product/version identified"}, nil

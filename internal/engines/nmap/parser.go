@@ -39,8 +39,9 @@ type xHost struct {
 	Hostnames []struct {
 		Name string `xml:"name,attr"`
 	} `xml:"hostnames>hostname"`
-	Ports []xPort `xml:"ports>port"`
-	OS    struct {
+	Ports       []xPort   `xml:"ports>port"`
+	HostScripts []xScript `xml:"hostscript>script"`
+	OS          struct {
 		Matches []struct {
 			Name     string `xml:"name,attr"`
 			Accuracy string `xml:"accuracy,attr"`
@@ -184,7 +185,7 @@ func convertHost(x xHost) (model.Host, error) {
 			ExtraInfo: xp.Service.Extra, Tunnel: xp.Service.Tunnel, CPEs: xp.Service.CPEs,
 		}
 		for _, s := range xp.Scripts {
-			p.Scripts = append(p.Scripts, model.Script{ID: s.ID, Output: s.Output})
+			p.Scripts = append(p.Scripts, model.Script{ID: s.ID, Output: scriptText(s)})
 			if s.ID == "banner" && p.Service.Banner == "" {
 				p.Service.Banner = s.Output
 			}
@@ -192,7 +193,56 @@ func convertHost(x xHost) (model.Host, error) {
 		p.TLS = extractTLS(xp.Scripts)
 		h.Ports = append(h.Ports, p)
 	}
+	attachHostScripts(&h, x.HostScripts)
 	return h, nil
+}
+
+// attachHostScripts stores host-level script results (Nmap's <hostscript>) on a
+// port, because Babylon's checks read script output per service. SMB scripts
+// (smb2-security-mode, smb-protocols, smb-os-discovery, smb-vuln-*) describe the
+// SMB service, so they go to 445/tcp, or 139/tcp when only NetBIOS is open.
+func attachHostScripts(h *model.Host, scripts []xScript) {
+	if len(scripts) == 0 {
+		return
+	}
+	smb := -1
+	for _, want := range []int{445, 139} {
+		for i := range h.Ports {
+			if h.Ports[i].Number == want && h.Ports[i].Proto == "tcp" && h.Ports[i].State == "open" {
+				smb = i
+				break
+			}
+		}
+		if smb >= 0 {
+			break
+		}
+	}
+	if smb < 0 {
+		return
+	}
+	for _, s := range scripts {
+		if strings.HasPrefix(s.ID, "smb") || s.ID == "nbstat" || s.ID == "msrpc-enum" {
+			h.Ports[smb].Scripts = append(h.Ports[smb].Scripts, model.Script{ID: s.ID, Output: s.Output})
+		}
+	}
+}
+
+// scriptText returns a script's output. Some scripts print only counts unless
+// Nmap runs verbose (ssh2-enum-algos: "kex_algorithms: (9)") while the names
+// live in the structured tables; those are appended so checks can read them.
+func scriptText(s xScript) string {
+	if s.ID != "ssh2-enum-algos" || len(s.Tables) == 0 {
+		return s.Output
+	}
+	var b strings.Builder
+	b.WriteString(s.Output)
+	for _, t := range s.Tables {
+		b.WriteString("\n  " + t.Key + ":")
+		for _, e := range t.Elems {
+			b.WriteString("\n    " + strings.TrimSpace(e.Value))
+		}
+	}
+	return b.String()
 }
 
 func normalizeFamily(osfamily, name string) string {

@@ -213,3 +213,19 @@ func TestRangeBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestImpreciseVersionsAreNotMatched(t *testing.T) {
+	for _, v := range []string{"9.6.20 - 9.6.23 or 11.14 - 11.18", "2.2.X - 2.3.X", "2.2.X", "4", "1.x", "3.*"} {
+		if ImpreciseVersion(v) == "" {
+			t.Errorf("%q must be rejected", v)
+		}
+	}
+	for _, v := range []string{"", "2.4.49", "8.4p1 Debian 5", "1.16.0", "5.0.14", "10.5.29", "4.4.30", "7.4"} {
+		if why := ImpreciseVersion(v); why != "" {
+			t.Errorf("%q wrongly rejected: %s", v, why)
+		}
+	}
+	if _, st, _ := Match(context.Background(), nil, Service{Product: "Samba smbd", Version: "4", CPEs: []string{"cpe:/a:samba:samba"}}); st.Checked || st.Reason == "" {
+		t.Errorf("bare major must be a visible skip: %+v", st)
+	}
+}

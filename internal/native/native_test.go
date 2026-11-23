@@ -268,3 +268,50 @@ func TestProbeChecksOnlyAvailableWithActiveSafety(t *testing.T) {
 		t.Error("Order must refuse probe checks at read-only safety")
 	}
 }
+
+func TestWeakSSHAlgorithmsFromTerseNmapOutputPlusTables(t *testing.T) {
+	out := "\n  kex_algorithms: (2)\n  encryption_algorithms: (1)\n  kex_algorithms:\n    curve25519-sha256\n    diffie-hellman-group14-sha1\n  encryption_algorithms:\n    3des-cbc"
+	weak := WeakSSHAlgorithms(out)
+	if len(weak) != 2 || !strings.Contains(weak[0], "diffie-hellman-group14-sha1") || weak[1] != "cipher: 3des-cbc" {
+		t.Errorf("%v", weak)
+	}
+}
+
+func TestMemcachedStatsWithoutVersionLine(t *testing.T) {
+	e := &Env{Address: "10.0.0.5", Services: []store.ServiceInfo{{Address: "10.0.0.5", Port: 11211, Proto: "tcp"}},
+		KB: map[string]json.RawMessage{store.ScriptKey(11211, "tcp", "memcached-info"): json.RawMessage(`"\n  Process ID: 1\n  Uptime: 85 seconds"`)}}
+	if got := memcachedOpen.Run(e); len(got) != 1 {
+		t.Errorf("real memcached-info output has no version line: %+v", got)
+	}
+}
+
+func TestSeveralFindingsOfOneCheckOnOnePortAreNotMerged(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	id, _ := st.CreateScan(ctx, "a", "basic", []string{"10.0.0.5"}, map[string]any{})
+	if err := st.IngestHost(ctx, id, model.Host{Address: "10.0.0.5", State: "up"}); err != nil {
+		t.Fatal(err)
+	}
+	assetID, _ := st.AssetID(ctx, "10.0.0.5")
+	two := Check{ID: "two", Name: "two", Family: "Misconfiguration", Run: func(*Env) []Finding {
+		return []Finding{
+			{Port: 3306, Proto: "tcp", Title: "Unsupported version", Severity: "high"},
+			{Port: 3306, Proto: "tcp", Title: "Does not offer TLS", Severity: "low"},
+			{Port: 3307, Proto: "tcp", Title: "Other port", Severity: "low"},
+		}
+	}}
+	if err := RunHost(ctx, st, id, &Env{Address: "10.0.0.5", AssetID: assetID}, []Check{two}); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := st.ListFindings(ctx, id, "")
+	if len(rows) != 3 {
+		t.Fatalf("want 3 distinct findings, got %d: %+v", len(rows), rows)
+	}
+	// Stable across scans: the same run again adds nothing new.
+	if err := RunHost(ctx, st, id, &Env{Address: "10.0.0.5", AssetID: assetID}, []Check{two}); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ = st.ListFindings(ctx, id, ""); len(rows) != 3 {
+		t.Fatalf("identity must be stable: %d", len(rows))
+	}
+}
