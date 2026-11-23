@@ -1,6 +1,6 @@
 # Roadmap status (resume file)
 
-Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/releases/tag/v0.1.0). Everything below is committed on `main` (3c4776c, after v0.1.0). The forward-looking plan is in [ROADMAP.md](ROADMAP.md).
+Last updated: 2026-11-23. Latest release **v0.1.1** (github.com/pwngoblin/babylon/releases/tag/v0.1.1). Everything below is committed on `main`. Milestones 01-04 (feeds and matcher, credentialed audits, UDP/native checks/speed, HTML/PDF reports) are all done; their spec files were removed and the outcomes are in the history section. The forward-looking plan is in [ROADMAP.md](ROADMAP.md).
 
 ## At a glance
 
@@ -24,6 +24,8 @@ Last updated: 2026-11-23. Released as **v0.1.0** (github.com/pwngoblin/babylon/r
 | `.nessus` export | done (import not built) |
 | Exploit availability tags (Exploit-DB, Metasploit metadata; `update-feeds --only exploitdb,metasploit`) | done; unit-tested; live feeds download and parse (33,568 Exploit-DB + 2,733 Metasploit CVE links) |
 | macOS credentialed audit (patch level from Apple releases, end-of-support, 9 MAC rules) | done; settings parse checked against a real Mac, patch matching against the live Apple feed; not yet run over SSH against a Mac |
+| Ground-truth lab (`babylon lab`, 28 services) | done; 19/19 measurable expectations, 0 false positives |
+| CI, signed releases, SBOM | done (v0.1.1) |
 | Homebrew vulnerability matching, triage, asset inventory | not built (see ROADMAP.md) |
 | Web-app scanning (DAST) | out of scope, separate project |
 
@@ -64,7 +66,7 @@ New in `internal/native/proto.go`, all read-only and `--allow-active`, mock-test
 Feed `apple` (`update-feeds --only apple`, `--apple-months` default 24): reads Apple's security releases index and one article per macOS release, stores CVEs fixed per release (`macos_release`, `macos_fix`, migration 9; the older unused `apple_release` table from 0001 was left alone). Live: 5 major lines, 3,700+ fixes. The credentialed SSH audit now detects Macs (`uname` Darwin), collects `sw_vers` plus read-only security settings (SIP, Gatekeeper, FileVault, application firewall and stealth mode, software update and login window defaults; all allowlisted, tested read-only), then: (1) every CVE fixed by a newer release in the host's major line becomes a confirmed `Missing patch (macOS)` finding grouped as "Missing macOS updates: macOS Tahoe (26.6 -> 26.7.3)"; (2) a line with no Apple release for 12 months gets an `Unsupported software` finding; (3) rules MAC-001..009 plus the SSH rules (Linux-only rules are not run on a Mac). Missing Apple data is a visible skip. Limits: a host older than the downloaded window gets a partial list; Homebrew packages are inventoried only (not matched); `sshd -T` and some settings may need a privileged account (reported as unknown).
 
 ## Ground-truth lab and bug sweep (2026-11-23)
-`babylon lab up|run|check` and `deploy/lab/manifest.yaml` (version 2: expected, forbidden, needs). 28 containers on 127.0.0.1 (standard ports where a probe needs them). First full scan scored 58% recall with Nuclei stalled and 125 unreviewed high findings; after fixing the bugs it exposed (see CHANGELOG), the same lab scores 19/19 (100%) on the expectations that do not need Nuclei, 0 forbidden findings, 59 unreviewed highs (CVE matches on lab software). Not measured on this machine: 6 Nuclei-dependent expectations (Nuclei v3.11.1 stalls here, see docs/known-issues.md) and TFTP (Docker Desktop for Mac drops replies from a new source port). `govulncheck` clean (x/net bumped), `staticcheck` clean, CI and release workflows in `.github/workflows` (not yet run on GitHub).
+`babylon lab up|run|check` and `deploy/lab/manifest.yaml` (version 2: expected, forbidden, needs). 28 containers on 127.0.0.1 (standard ports where a probe needs them). First full scan scored 58% recall with Nuclei stalled and 125 unreviewed high findings; after fixing the bugs it exposed (see CHANGELOG), the same lab scores 19/19 (100%) on the expectations that do not need Nuclei, 0 forbidden findings, 59 unreviewed highs (CVE matches on lab software). Not measured on this machine: 6 Nuclei-dependent expectations (Nuclei v3.11.1 stalls here, see docs/known-issues.md) and TFTP (Docker Desktop for Mac drops replies from a new source port). `govulncheck` and `staticcheck` clean. CI and release workflows run on GitHub (Linux, macOS pass; Windows test job fails on test-harness issues, non-blocking, see known-issues.md); v0.1.1 released with SBOM, checksums and a sigstore signature.
 
 ## Standing rules
 - Scan only hosts the user names. Lab containers are on 127.0.0.1. Never sweep a subnet.
@@ -133,5 +135,4 @@ Historical TODO (since done, except the TLS-script guard): targeted UDP stage (1
 
 ## Milestone 04: HTML/PDF reports: v0.1 DONE (2026-11-23)
 `internal/report/html.go` (self-contained, CSP meta, no JS, data-driven: sections come from Groups/Hosts/Family, so new finding types need no template change; optional `familyInfo` for titles), `pdf.go` (Chrome/Chromium/weasyprint), `doctor` reports PDF renderer, CLI `scans export --format html|pdf`, web `Export HTML` button + `?format=html`. Test: escaping + no external refs. TODO: per-host credentialed-audit status block (after M02), richer coverage appendix.
-(original spec below)
-Self-contained html/template report, Export HTML button, PDF via chrome/weasyprint detected in `doctor`. See `milestone04.md`.
+

@@ -1,12 +1,12 @@
 # Babylon
 
-A free vulnerability scanner for your own network. Think Nessus, but open source, runs on your laptop, and keeps everything local.
+A free vulnerability scanner for your own network. Latest release: [v0.1.1](https://github.com/pwngoblin/babylon/releases/latest) (binaries for macOS, Linux and Windows, with checksums, SBOM and signature). Think Nessus, but open source, runs on your laptop, and keeps everything local.
 
 Point it at IPs or a subnet. It finds hosts, open ports and software versions, looks up known vulnerabilities, and gives you a report that says what to fix first.
 
 ## Install
 
-You need Go 1.27+, [nmap](https://nmap.org) and [nuclei](https://github.com/projectdiscovery/nuclei). `trivy` is optional.
+Download a binary from the releases page, or build from source. You need Go 1.27+, [nmap](https://nmap.org) and [nuclei](https://github.com/projectdiscovery/nuclei). `trivy` is optional.
 
 ```
 git clone https://github.com/pwngoblin/babylon
@@ -76,4 +76,4 @@ Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus`
   | Nuclei web/CVE templates | **stalls on some machines** (`babylon doctor` tells you); see [known issues](docs/known-issues.md) |
   | Windows (WinRM), macOS (SSH), RHEL-family audits, UDP stage | **experimental**: tested against fakes and mocks, not real hosts |
 
-More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [status](docs/roadmap/STATUS.md) · [roadmap](docs/roadmap/ROADMAP.md) · License: Apache-2.0
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [status](docs/roadmap/STATUS.md) · [roadmap](docs/roadmap/ROADMAP.md) · [known issues](docs/known-issues.md) · [changelog](CHANGELOG.md) · License: Apache-2.0
