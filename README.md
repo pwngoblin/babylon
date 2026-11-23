@@ -48,6 +48,21 @@ export WPW='your-windows-password'
 
 Add your own checks as YAML in `~/.babylon/checks/` (`babylon checks validate`, `babylon checks test`; see `internal/pack/builtin` for examples).
 
+Keep track over time: `babylon trend` shows new and resolved findings per scan. `babylon triage add 42 --status accepted-risk --reason "patch window" --expires 90d` hides a finding until it expires. `babylon assets set 10.0.0.5 --criticality high` ranks that host's findings higher; `--fragile` stops active probes against it.
+
+Get told only about change: put a webhook in `~/.babylon/notify.yaml` (see `babylon notify test`) and scheduled scans post just the new findings.
+
+Compliance view: `scans export 3 --compliance pci-dss-4` adds a per-control section (also `nist-800-53`, `iso-27001`). The mapping is Babylon's own, an evidence aid and not an assessment.
+
+Audit a **database** (PostgreSQL, MySQL/MariaDB) with a read-only login:
+
+```
+export DBPW='the-password'
+./babylon scan 10.0.0.20 -t credentialed --db-user auditor --db-password-env DBPW
+```
+
+The audit refuses to send the password without TLS unless you add `--db-allow-plaintext`.
+
 Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus` file. Schedules: pick "Repeat" when you start a scan in the web UI.
 
 ## What it does
@@ -57,6 +72,7 @@ Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus`
 - **Matches** software versions to CVEs (NVD), and marks how sure it is: `confirmed`, `firm` or `tentative`.
 - **Logs in over SSH** (read-only) to compare installed packages with distro advisories (OSV) and run about 30 hardening checks (accounts, services, network and kernel settings, Docker).
 - **Logs in to a Mac over SSH** (read-only) to find missing macOS updates (Apple security releases) and check 9 security settings. Run `update-feeds --only apple` first.
+- **Logs in to PostgreSQL and MySQL/MariaDB** (read-only) to check TLS, authentication and account settings (15 rules).
 - **Logs in to Windows over WinRM** (read-only) to find missing Microsoft updates (MSRC data) and check 15 security settings.
 - **Ranks** results by actively exploited (CISA KEV), public exploit availability (Exploit-DB, Metasploit; metadata only), severity and exploit likelihood (EPSS).
 - **Shows** results in a local web UI with filters and sortable columns.

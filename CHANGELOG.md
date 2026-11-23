@@ -4,6 +4,14 @@
 
 ### Added
 - Check packs: declarative YAML checks (passive and probe) with built-in and user packs, per-check test fixtures and `babylon checks list|validate|test`. 22 built-in pack checks.
+- Compliance report: `scans export --compliance nist-800-53|pci-dss-4|iso-27001` adds a per-control pass/fail/not-assessed section (JSON, Markdown, HTML, web export). Every check and audit rule is mapped.
+- 20 more pack checks (management interfaces, STARTTLS/TLS-less mail and FTP, JDWP, RMI, r-services, more end-of-life versions).
+- Triage workflow: `babylon triage` marks findings accepted-risk (with expiry) or false-positive, carried across scans and shown in reports.
+- Asset inventory: `babylon assets` sets criticality (ranks findings), fragile (no active probes) and tags.
+- `babylon trend` and `/api/trends`: findings over time with new and resolved per scan.
+- Webhook notifications for new findings only (`~/.babylon/notify.yaml`, `babylon notify test`).
+- Synthetic scale test (5,000 hosts, 65,000 findings); fixed two slow queries it exposed (findings listing and the asset list).
+- Credentialed PostgreSQL and MySQL/MariaDB audits (`--db-user`, `--db-password-env`): 15 read-only rules, refuses plaintext logins by default.
 - `docs/roadmap/PLAN.md`: plan for closing the gap to Nessus.
 
 ## 0.1.1
