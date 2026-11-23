@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -266,8 +267,19 @@ func (n *nucleiRuntime) handleScan(ctx context.Context, job store.Job) error {
 	return n.run(ctx, job, tpls, false)
 }
 
+// nucleiBatchSize is how many templates one Nuclei process runs. Smaller
+// batches bound the damage of a stalled process: Nuclei has been seen to hang
+// indefinitely, and one stuck process must not hold a whole scan for 45 minutes.
+const nucleiBatchSize = 100
+
+// maxConsecutiveStalls ends a job when Nuclei keeps stalling, which means the
+// tool (not one template) is broken on this machine.
+const maxConsecutiveStalls = 4
+
 // run executes Nuclei over the job's targets with exactly the given templates,
 // recording every result. detect=true also feeds technologies to the KB.
+// Templates run in batches with a deadline each; a batch that stalls is split
+// until the stuck template is isolated, skipped and reported in the coverage.
 func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, detect bool) error {
 	if len(tpls) == 0 || len(job.Targets) == 0 {
 		return nil
@@ -279,27 +291,115 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 	if err != nil {
 		return orchestrator.Permanent(err)
 	}
-	var tl strings.Builder
 	for _, rel := range tpls {
 		abs := filepath.Join(root, filepath.FromSlash(rel))
 		if !strings.HasPrefix(abs, root+string(os.PathSeparator)) { // defence against a poisoned index
 			return orchestrator.Permanent(fmt.Errorf("template path escapes templates root: %q", rel))
 		}
-		tl.WriteString(abs + "\n")
 	}
-	tfile := filepath.Join(job.RawDir, "templates.txt")
-	gfile := filepath.Join(job.RawDir, "targets.txt")
-	if err := os.WriteFile(tfile, []byte(tl.String()), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(job.RawDir, "results.jsonl"), nil, 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(gfile, []byte(strings.Join(job.Targets, "\n")+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(job.RawDir, "targets.txt"), []byte(strings.Join(job.Targets, "\n")+"\n"), 0o600); err != nil {
+		return err
+	}
+	st := &stallState{}
+	for i := 0; i < len(tpls); i += nucleiBatchSize {
+		end := i + nucleiBatchSize
+		if end > len(tpls) {
+			end = len(tpls)
+		}
+		if err := n.runBisect(ctx, job, root, tpls[i:end], detect, st); err != nil {
+			n.recordStalls(ctx, job, st)
+			return err
+		}
+	}
+	n.recordStalls(ctx, job, st)
+	return nil
+}
+
+type stallState struct {
+	seq         int
+	consecutive int
+	skipped     []string
+}
+
+// runBisect runs one batch; on a stall it halves the batch until the culprit is alone.
+func (n *nucleiRuntime) runBisect(ctx context.Context, job store.Job, root string, batch []string, detect bool, st *stallState) error {
+	st.seq++
+	err := n.runBatch(ctx, job, root, batch, detect, st.seq)
+	if err == nil {
+		st.consecutive = 0
+		return nil
+	}
+	if !errors.Is(err, berr.ErrTimeout) {
+		return err
+	}
+	st.consecutive++
+	if st.consecutive >= maxConsecutiveStalls {
+		return orchestrator.Permanent(fmt.Errorf("nuclei stalled %d times in a row (last batch: %d templates); the tool looks stuck on this machine, remaining templates were not run", st.consecutive, len(batch)))
+	}
+	if len(batch) == 1 {
+		st.skipped = append(st.skipped, batch[0])
+		return nil
+	}
+	h := len(batch) / 2
+	if err := n.runBisect(ctx, job, root, batch[:h], detect, st); err != nil {
+		return err
+	}
+	return n.runBisect(ctx, job, root, batch[h:], detect, st)
+}
+
+// batchDeadline allows three times the rate-limited request time plus a fixed
+// allowance, never more than the job timeout.
+func (n *nucleiRuntime) batchDeadline(templates, targets int) time.Duration {
+	rate := n.rate
+	if rate <= 0 {
+		rate = 100
+	}
+	expected := time.Duration(templates*targets*2/rate) * time.Second
+	d := 3*expected + 45*time.Second
+	if n.timeout > 0 && d > n.timeout {
+		d = n.timeout
+	}
+	return d
+}
+
+// recordStalls reports skipped templates as skipped checks so a thin result is visible.
+func (n *nucleiRuntime) recordStalls(ctx context.Context, job store.Job, st *stallState) {
+	if len(st.skipped) == 0 {
+		return
+	}
+	bg := context.WithoutCancel(ctx)
+	_ = os.WriteFile(filepath.Join(job.RawDir, "stalled-templates.txt"), []byte(strings.Join(st.skipped, "\n")+"\n"), 0o600)
+	reason := fmt.Sprintf("Nuclei stalled on %d template(s) and they were skipped (first: %s)", len(st.skipped), filepath.Base(st.skipped[0]))
+	for _, t := range job.Targets {
+		host := t
+		if u, err := url.Parse(t); err == nil && u.Hostname() != "" {
+			host = u.Hostname()
+		}
+		if id, err := n.st.AssetID(bg, host); err == nil {
+			_ = n.st.RecordCheckRun(bg, job.ScanID, id, "nuclei-stalled-templates", "skipped", reason)
+		}
+	}
+}
+
+// runBatch runs one Nuclei process over the given templates with a deadline.
+func (n *nucleiRuntime) runBatch(ctx context.Context, job store.Job, root string, tpls []string, detect bool, seq int) error {
+	var tl strings.Builder
+	for _, rel := range tpls {
+		tl.WriteString(filepath.Join(root, filepath.FromSlash(rel)) + "\n")
+	}
+	tfile := filepath.Join(job.RawDir, fmt.Sprintf("templates-%03d.txt", seq))
+	gfile := filepath.Join(job.RawDir, "targets.txt")
+	if err := os.WriteFile(tfile, []byte(tl.String()), 0o600); err != nil {
 		return err
 	}
 	args, err := nuclei.Args(n.res.Nuclei, gfile, tfile, n.rate)
 	if err != nil {
 		return orchestrator.Permanent(err)
 	}
-	raw, err := os.OpenFile(filepath.Join(job.RawDir, "results.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	raw, err := os.OpenFile(filepath.Join(job.RawDir, "results.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -309,7 +409,7 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 	bg := context.WithoutCancel(ctx)
 	var parseErrs int
 	_, runErr := runner.Run(ctx, runner.Spec{
-		Tool: "nuclei", Args: args, Timeout: n.timeout, MaxStdout: 1 << 30,
+		Tool: "nuclei", Args: args, Timeout: n.batchDeadline(len(tpls), len(job.Targets)), MaxStdout: 1 << 30,
 		OnLine: func(line []byte) error {
 			if len(line) == 0 || line[0] != '{' {
 				return nil

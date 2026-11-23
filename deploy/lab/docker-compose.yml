@@ -34,3 +34,75 @@ services:
     image: fauria/vsftpd
     environment: [ANONYMOUS_ACCESS=YES]
     ports: ["127.0.0.1:12121:21"]
+
+  # ---- infrastructure services (standard ports, because Babylon's protocol probes use them) ----
+  mariadb-eol:           # end-of-life MariaDB without TLS
+    image: mariadb:10.5
+    environment: [MARIADB_ROOT_PASSWORD=lab]
+    ports: ["127.0.0.1:3306:3306"]
+
+  postgres-notls:        # PostgreSQL answering 'N' to SSLRequest
+    image: postgres:11
+    environment: [POSTGRES_PASSWORD=lab]
+    ports: ["127.0.0.1:5432:5432"]
+
+  mongo-noauth:          # unauthenticated MongoDB
+    image: mongo:4.4
+    ports: ["127.0.0.1:27017:27017"]
+
+  memcached-open:        # unauthenticated Memcached
+    image: memcached:1.6
+    ports: ["127.0.0.1:11211:11211"]
+
+  mqtt-anon:             # Mosquitto 1.x allows anonymous clients by default
+    image: eclipse-mosquitto:1.6
+    ports: ["127.0.0.1:1883:1883"]
+
+  zookeeper-open:        # ZooKeeper `srvr` answers anyone
+    image: zookeeper:3.6
+    ports: ["127.0.0.1:2181:2181"]
+
+  rabbitmq-epmd:         # Erlang port mapper (EPMD) listed to anyone
+    image: rabbitmq:3.8
+    ports: ["127.0.0.1:4369:4369", "127.0.0.1:5672:5672"]
+
+  openldap-anon:         # LDAP accepting anonymous binds
+    image: osixia/openldap:1.5.0
+    command: ["--copy-service"]
+    ports: ["127.0.0.1:389:389"]
+
+  consul-open:           # Consul API without ACLs
+    image: hashicorp/consul:1.15
+    command: ["agent", "-dev", "-client=0.0.0.0"]
+    ports: ["127.0.0.1:8500:8500"]
+
+  tftp-open:             # TFTP server (no authentication by design)
+    image: kalaksi/tftpd
+    ports: ["127.0.0.1:69:69/udp"]
+
+  snmp-public:           # SNMP v2c, community "public"
+    image: polinux/snmpd
+    ports: ["127.0.0.1:161:161/udp"]
+
+  rsync-open:            # rsync daemon with a listable module
+    image: vimagick/rsyncd
+    ports: ["127.0.0.1:873:873"]
+
+  samba-guest:           # SMB with a guest share (signing not required)
+    image: dperson/samba
+    command: ["-p", "-s", "pub;/share;yes;no;yes"]
+    ports: ["127.0.0.1:445:445", "127.0.0.1:139:139"]
+
+  # ---- credentialed-audit targets: old OS images with sshd (user audit / labpass123) ----
+  ssh-ubuntu:
+    build: {context: ssh, dockerfile: Dockerfile.ubuntu}
+    ports: ["127.0.0.1:12301:22"]
+  ssh-debian:
+    build: {context: ssh, dockerfile: Dockerfile.debian}
+    ports: ["127.0.0.1:12302:22"]
+  ssh-alpine:
+    build: {context: ssh, dockerfile: Dockerfile.alpine}
+    ports: ["127.0.0.1:12303:22"]
+  ssh-rocky:
+    build: {context: ssh, dockerfile: Dockerfile.rocky}
+    ports: ["127.0.0.1:12304:22"]

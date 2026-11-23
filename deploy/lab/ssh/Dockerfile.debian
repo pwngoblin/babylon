@@ -1,0 +1,4 @@
+FROM debian:12
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server sudo && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd && useradd -m -s /bin/bash audit && echo 'audit:labpass123' | chpasswd
+CMD ["/usr/sbin/sshd", "-D", "-e"]

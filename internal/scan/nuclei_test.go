@@ -232,3 +232,90 @@ func TestProductNamedRejectsMismatchedTemplateMetadata(t *testing.T) {
 		t.Error("matching product names must pass")
 	}
 }
+
+// stallingNuclei is a nuclei that never returns when its template list names
+// hang.yaml (or always, if every is set), like the stuck processes seen in the field.
+func stallingNuclei(t *testing.T, every bool) {
+	t.Helper()
+	dir := t.TempDir()
+	fx, _ := filepath.Abs("../../testdata/nuclei/results.jsonl")
+	cond := `grep -q "hang.yaml" "$t"`
+	if every {
+		cond = "true"
+	}
+	script := `#!/bin/sh
+t=""; prev=""
+for a in "$@"; do [ "$prev" = "-t" ] && t="$a"; prev="$a"; done
+if ` + cond + `; then exec sleep 30; fi
+grep '"template-id":"CVE-2021-30047"' "` + fx + `" | head -1
+`
+	if err := os.WriteFile(filepath.Join(dir, "nuclei"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func stallJob(t *testing.T, st *store.Store, scanID int64) store.Job {
+	t.Helper()
+	if err := st.IngestHost(context.Background(), scanID, model.Host{Address: "127.0.0.1", State: "up"}); err != nil {
+		t.Fatal(err)
+	}
+	return store.Job{ScanID: scanID, Targets: []string{"http://127.0.0.1:18082"}, RawDir: t.TempDir()}
+}
+
+func TestNucleiStalledTemplateIsIsolatedSkippedAndReported(t *testing.T) {
+	stallingNuclei(t, false)
+	st, id, res := setup(t, policy.TemplateBasic)
+	ctx := context.Background()
+	rt := newNucleiRuntime(st, res, Options{NucleiDir: t.TempDir(), NucleiRate: 100, NucleiTimeout: time.Second})
+	job := stallJob(t, st, id)
+	tpls := []string{"http/a.yaml", "http/b.yaml", "http/hang.yaml", "http/c.yaml", "http/d.yaml"}
+
+	start := time.Now()
+	if err := rt.run(ctx, job, tpls, false); err != nil {
+		t.Fatalf("one stuck template must not fail the job: %v", err)
+	}
+	if time.Since(start) > 20*time.Second {
+		t.Errorf("took %s", time.Since(start))
+	}
+	b, _ := os.ReadFile(filepath.Join(job.RawDir, "stalled-templates.txt"))
+	if strings.TrimSpace(string(b)) != "http/hang.yaml" {
+		t.Errorf("skipped = %q", b)
+	}
+	res1, _ := os.ReadFile(filepath.Join(job.RawDir, "results.jsonl"))
+	if !strings.Contains(string(res1), "CVE-2021-30047") {
+		t.Errorf("results from the healthy batches must be kept: %q", res1)
+	}
+	runs, _ := st.ListCheckRuns(ctx, id)
+	found := false
+	for _, r := range runs {
+		if r.CheckID == "nuclei-stalled-templates" && r.State == "skipped" && strings.Contains(r.Reason, "hang.yaml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the skip must be visible in coverage: %+v", runs)
+	}
+}
+
+func TestNucleiThatAlwaysStallsFailsFastInsteadOfHoldingTheScan(t *testing.T) {
+	stallingNuclei(t, true)
+	st, id, res := setup(t, policy.TemplateBasic)
+	rt := newNucleiRuntime(st, res, Options{NucleiDir: t.TempDir(), NucleiRate: 100, NucleiTimeout: time.Second})
+	job := stallJob(t, st, id)
+	var tpls []string
+	for i := 0; i < 64; i++ {
+		tpls = append(tpls, "http/t"+strings.Repeat("x", i%5)+string(rune('a'+i%26))+".yaml")
+	}
+	start := time.Now()
+	err := rt.run(context.Background(), job, tpls, false)
+	if err == nil || !strings.Contains(err.Error(), "looks stuck") {
+		t.Fatalf("want a clear 'stuck' error, got %v", err)
+	}
+	if !orchestrator.IsPermanent(err) {
+		t.Error("retrying a stuck tool for the full timeout again is pointless: error must be permanent")
+	}
+	if time.Since(start) > 15*time.Second {
+		t.Errorf("gave up after %s", time.Since(start))
+	}
+}

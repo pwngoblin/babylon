@@ -1,52 +1,60 @@
-# Expected-findings manifest for the Phase 0 lab.
-# Coverage = (expected findings detected) / (expected findings). Extra detections are
-# reviewed by hand and classed true-positive or false-positive to compute precision.
-# `kind`: cve | misconfig | exposure | info.  `min_confidence`: the tier we count as a hit.
-# `[VERIFY]` marks expectations not yet confirmed against the running target.
-version: 1
-targets:
-  httpd-2449:
-    address: 127.0.0.1
-    port: 18081
-    expected:
-      # Verified in spike: default httpd:2.4.49 image answers 403 on the traversal path (not exploitable
-      # in this config), so these are version-based only. Tentative is the correct ceiling.
-      - { id: CVE-2021-41773, kind: cve, min_confidence: tentative }
-      - { id: CVE-2021-42013, kind: cve, min_confidence: tentative }
-      - { id: apache-version-disclosure, kind: info, min_confidence: confirmed }
-  redis-noauth:
-    address: 127.0.0.1
-    port: 16379
-    expected:
-      - { id: redis-unauthenticated, kind: misconfig, min_confidence: confirmed }
-  nginx-old:
-    address: 127.0.0.1
-    port: 18082
-    expected:
-      - { id: CVE-2019-20372, kind: cve, min_confidence: tentative }   # verified: in NVD results for f5:nginx:1.16.0
-      - { id: nginx-version-disclosure, kind: info, min_confidence: confirmed }
-  dvwa:
-    address: 127.0.0.1
-    port: 18083
-    expected:
-      - { id: dvwa-default-login, kind: misconfig, min_confidence: confirmed }  # needs --check-default-creds
-      - { id: phpinfo-or-config-exposure, kind: exposure, min_confidence: confirmed }  # [VERIFY]
-  juice-shop:
-    address: 127.0.0.1
-    port: 13000
-    expected:
-      - { id: juice-shop-tech-detect, kind: info, min_confidence: confirmed }
-      - { id: missing-security-headers, kind: misconfig, min_confidence: confirmed }
-  openssh-old:
-    address: 127.0.0.1
-    port: 12222
-    expected:
-      - { id: ssh-weak-algorithms, kind: misconfig, min_confidence: confirmed }  # [VERIFY] depends on image config
-      - { id: openssh-version-cves, kind: cve, min_confidence: tentative }       # CPE→CVE breadth
-  ftp-anon:
-    # Spike finding: this image rejects anonymous login (530) despite ANONYMOUS_ACCESS=YES, so the
-    # original ftp-anonymous-login expectation was wrong and is removed. Needs a working anon-FTP image.
-    address: 127.0.0.1
-    port: 12121
-    expected:
-      - { id: CVE-2021-30047, kind: cve, min_confidence: firm }   # vsftpd 3.0.2, found by Nuclei
+# Ground truth for the Babylon lab (deploy/lab/docker-compose.yml, 127.0.0.1 only).
+#
+# Expectations come from what each container IS, not from what Babylon currently
+# reports. A "miss" is therefore a real detection gap to fix, never a reason to
+# edit the manifest. Remove an entry only when the target proves it was wrong
+# (and say why in `note`).
+#
+#   expected   a finding that must be reported (at least at min_confidence)
+#   forbidden  a known false positive that must never be reported
+#   needs      scan option the expectation depends on: allow-active, deep, credentialed, root
+#
+# Run:  babylon lab up && babylon lab run        (or: babylon lab check --scan N)
+version: 2
+scan:
+  template: full_unauth
+  targets: [127.0.0.1]
+  timing: fast-lan
+  allow_active: true
+  ports: "21,22,69,139,161,389,445,873,1883,2181,3306,4369,5432,5672,8500,11211,12121,12222,13000,16379,18081,18082,18083,27017,12301,12302,12303,12304"
+thresholds:
+  min_recall: 0.85
+  max_forbidden: 0
+
+expected:
+  # ---- web servers and version matching ----
+  - {id: apache-2449-cve, port: 18081, cve: CVE-2021-41773, min_confidence: tentative, note: "default image answers 403 on the traversal path, so version-based is the honest ceiling"}
+  - {id: apache-2449-version, port: 18081, title: "apache", min_confidence: confirmed}
+  - {id: nginx-116-cve, port: 18082, cve: CVE-2019-20372, min_confidence: tentative}
+  - {id: nginx-116-version, port: 18082, title: "nginx", min_confidence: confirmed}
+  - {id: openssh-84-cves, port: 12222, product: "openssh", min_confidence: tentative}
+  - {id: redis-50-cves, port: 16379, product: "redis", min_confidence: tentative}
+  - {id: vsftpd-cve, port: 12121, cve: CVE-2021-30047, min_confidence: firm}
+  # ---- web applications (detection, not DAST) ----
+  - {id: juice-shop-detected, port: 13000, title: "juice", min_confidence: confirmed}
+  - {id: security-headers, port: 13000, title: "security headers", min_confidence: confirmed}
+  - {id: dvwa-exposure, port: 18083, title: "dvwa|phpinfo|configuration", min_confidence: confirmed}
+  # ---- misconfiguration (native checks and NSE) ----
+  - {id: redis-noauth, port: 16379, title: "redis", family: Misconfiguration, min_confidence: confirmed}
+  - {id: ssh-weak-algorithms, port: 12222, title: "weak algorithms", min_confidence: confirmed}
+  - {id: mongo-noauth, port: 27017, title: "mongo", min_confidence: confirmed}
+  - {id: memcached-open, port: 11211, title: "memcached", min_confidence: confirmed}
+  - {id: smb-signing, port: 445, title: "smb.*signing", min_confidence: confirmed}
+  # ---- active probes (need --allow-active) ----
+  - {id: mariadb-eol, port: 3306, title: "Unsupported Database Version: MariaDB 10.5", min_confidence: firm, needs: allow-active}
+  - {id: mariadb-no-tls, port: 3306, title: "does not offer TLS", min_confidence: confirmed, needs: allow-active}
+  - {id: postgres-no-tls, port: 5432, title: "does not offer TLS", min_confidence: confirmed, needs: allow-active}
+  - {id: mqtt-anonymous, port: 1883, title: "MQTT broker accepts anonymous", min_confidence: confirmed, needs: allow-active}
+  - {id: zookeeper-open, port: 2181, title: "ZooKeeper accessible", min_confidence: confirmed, needs: allow-active}
+  - {id: epmd-exposed, port: 4369, title: "EPMD", min_confidence: confirmed, needs: allow-active}
+  - {id: ldap-anonymous-bind, port: 389, title: "LDAP server accepts anonymous", min_confidence: confirmed, needs: allow-active}
+  - {id: consul-open, port: 8500, title: "consul", min_confidence: confirmed, needs: allow-active}
+  - {id: rsync-modules, port: 873, title: "rsync", min_confidence: confirmed, needs: allow-active}
+  - {id: tftp-open, port: 69, proto: udp, title: "TFTP", min_confidence: confirmed, needs: allow-active}
+  - {id: snmp-public, port: 161, proto: udp, title: "SNMP", min_confidence: confirmed, needs: allow-active}
+
+forbidden:
+  - {id: nse-cve2011-3192-on-nginx, port: 18082, title: "cve2011-3192", reason: "Apache-only CVE reported on nginx (known NSE false positive)"}
+  - {id: apache-cves-on-nginx, port: 18082, product: "apache", reason: "CVE matching must not cross products"}
+  - {id: nginx-cves-on-apache, port: 18081, product: "nginx", reason: "CVE matching must not cross products"}
+  - {id: openldap-readable, port: 389, title: "directory readable without authentication", reason: "osixia/openldap denies anonymous reads by default"}

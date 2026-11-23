@@ -58,6 +58,12 @@ func Permanent(err error) error {
 	return permanent{err}
 }
 
+// IsPermanent reports whether err was marked non-retryable.
+func IsPermanent(err error) bool {
+	var p permanent
+	return errors.As(err, &p)
+}
+
 // Summary is the outcome of Run.
 type Summary struct {
 	Status string
