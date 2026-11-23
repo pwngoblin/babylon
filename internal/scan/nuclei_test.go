@@ -319,3 +319,22 @@ func TestNucleiThatAlwaysStallsFailsFastInsteadOfHoldingTheScan(t *testing.T) {
 		t.Errorf("gave up after %s", time.Since(start))
 	}
 }
+
+func TestOnceNucleiIsStuckLaterJobsFailImmediately(t *testing.T) {
+	stallingNuclei(t, true)
+	st, id, res := setup(t, policy.TemplateBasic)
+	rt := newNucleiRuntime(st, res, Options{NucleiDir: t.TempDir(), NucleiRate: 100, NucleiTimeout: time.Second})
+	job := stallJob(t, st, id)
+	var tpls []string
+	for i := 0; i < 16; i++ {
+		tpls = append(tpls, "http/x"+string(rune('a'+i))+".yaml")
+	}
+	if err := rt.run(context.Background(), job, tpls, false); err == nil {
+		t.Fatal("first job must report the stall")
+	}
+	start := time.Now()
+	err := rt.run(context.Background(), job, tpls, false)
+	if err == nil || !orchestrator.IsPermanent(err) || time.Since(start) > time.Second {
+		t.Fatalf("later jobs must fail at once, got %v after %s", err, time.Since(start))
+	}
+}

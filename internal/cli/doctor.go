@@ -32,7 +32,8 @@ var tools = []toolCheck{
 var versionRe = regexp.MustCompile(`\d+\.\d+(\.\d+)?`)
 
 func newDoctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var home string
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check that required external tools and privileges are available",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -55,13 +56,27 @@ func newDoctorCmd() *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "[warn] pdf     no Chrome/Chromium/weasyprint found (PDF export unavailable; HTML still works)\n")
 			}
+			if _, err := exec.LookPath("nuclei"); err == nil {
+				detail, ok, ran := nucleiSelfTest(cmd.Context(), nucleiDir(home), 20*time.Second)
+				mark := "ok  "
+				switch {
+				case !ran:
+					mark = "info"
+				case !ok:
+					mark = "FAIL"
+					failed = true
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[%s] nuclei  self-test: %s\n", mark, detail)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "[info] privileges: %s\n", privilegeNote())
 			if failed {
-				return fmt.Errorf("required tools are missing")
+				return fmt.Errorf("doctor found problems (see FAIL lines above)")
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&home, "home", defaultHome(), "data directory (for the Nuclei self-test templates)")
+	return cmd
 }
 
 func probe(ctx context.Context, t toolCheck) (string, bool) {

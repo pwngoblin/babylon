@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"babylon/internal/engines/nuclei"
@@ -45,6 +46,8 @@ type nucleiRuntime struct {
 	once sync.Once
 	ix   *nuclei.Index
 	err  error
+
+	stuck atomic.Bool // Nuclei stalled repeatedly in this scan: later jobs fail at once
 }
 
 func newNucleiRuntime(st *store.Store, res *policy.Resolved, opt Options) *nucleiRuntime {
@@ -287,6 +290,9 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 	if job.RawDir == "" {
 		return orchestrator.Permanent(errors.New("job has no raw output directory"))
 	}
+	if n.stuck.Load() {
+		return orchestrator.Permanent(errors.New("nuclei stalled earlier in this scan and looks stuck on this machine; this job was not run (see docs/known-issues.md)"))
+	}
 	root, err := filepath.Abs(n.dir)
 	if err != nil {
 		return orchestrator.Permanent(err)
@@ -337,6 +343,7 @@ func (n *nucleiRuntime) runBisect(ctx context.Context, job store.Job, root strin
 	}
 	st.consecutive++
 	if st.consecutive >= maxConsecutiveStalls {
+		n.stuck.Store(true)
 		return orchestrator.Permanent(fmt.Errorf("nuclei stalled %d times in a row (last batch: %d templates); the tool looks stuck on this machine, remaining templates were not run", st.consecutive, len(batch)))
 	}
 	if len(batch) == 1 {
