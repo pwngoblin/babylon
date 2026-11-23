@@ -275,6 +275,11 @@ func (n *nucleiRuntime) handleScan(ctx context.Context, job store.Job) error {
 // indefinitely, and one stuck process must not hold a whole scan for 45 minutes.
 const nucleiBatchSize = 100
 
+// maxStallBudget caps the time one job may spend waiting on stalled batches,
+// however the stalls are spread: a few bad templates are isolated, but a tool
+// that keeps stalling must not be bisected for an hour.
+const maxStallBudget = 5 * time.Minute
+
 // maxConsecutiveStalls ends a job when Nuclei keeps stalling, which means the
 // tool (not one template) is broken on this machine.
 const maxConsecutiveStalls = 4
@@ -327,12 +332,14 @@ func (n *nucleiRuntime) run(ctx context.Context, job store.Job, tpls []string, d
 type stallState struct {
 	seq         int
 	consecutive int
+	wasted      time.Duration
 	skipped     []string
 }
 
 // runBisect runs one batch; on a stall it halves the batch until the culprit is alone.
 func (n *nucleiRuntime) runBisect(ctx context.Context, job store.Job, root string, batch []string, detect bool, st *stallState) error {
 	st.seq++
+	began := time.Now()
 	err := n.runBatch(ctx, job, root, batch, detect, st.seq)
 	if err == nil {
 		st.consecutive = 0
@@ -342,9 +349,10 @@ func (n *nucleiRuntime) runBisect(ctx context.Context, job store.Job, root strin
 		return err
 	}
 	st.consecutive++
-	if st.consecutive >= maxConsecutiveStalls {
+	st.wasted += time.Since(began)
+	if st.consecutive >= maxConsecutiveStalls || st.wasted >= n.stallBudget() {
 		n.stuck.Store(true)
-		return orchestrator.Permanent(fmt.Errorf("nuclei stalled %d times in a row (last batch: %d templates); the tool looks stuck on this machine, remaining templates were not run", st.consecutive, len(batch)))
+		return orchestrator.Permanent(fmt.Errorf("nuclei stalled %d times (%s lost; last batch: %d templates); the tool looks stuck on this machine, remaining templates were not run", st.consecutive, st.wasted.Round(time.Second), len(batch)))
 	}
 	if len(batch) == 1 {
 		st.skipped = append(st.skipped, batch[0])
@@ -355,6 +363,13 @@ func (n *nucleiRuntime) runBisect(ctx context.Context, job store.Job, root strin
 		return err
 	}
 	return n.runBisect(ctx, job, root, batch[h:], detect, st)
+}
+
+func (n *nucleiRuntime) stallBudget() time.Duration {
+	if n.timeout > 0 && n.timeout < maxStallBudget {
+		return n.timeout * 6 // tests use tiny timeouts
+	}
+	return maxStallBudget
 }
 
 // batchDeadline allows three times the rate-limited request time plus a fixed
