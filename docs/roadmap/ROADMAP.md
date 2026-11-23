@@ -18,7 +18,6 @@ Rule for every item: non-destructive by default, opt-in flags for anything intru
 10. **Feed health and database backup.** `doctor` warns when feeds are stale; record feed versions in each scan; one command to back up or move `~/.babylon`.
 11. **Faster scans.** Only run `ssl-*` scripts where TLS is plausible (they hang about 30 s on non-TLS ports today); smarter template selection.
 12. **Containers and lockfiles on audited hosts.** Trivy-style matching on images and `package-lock`/`go.sum`/`requirements.txt` found over SSH.
-13. **Web UI for triage, assets and trends** (CLI and API exist).
 
 ## Later
 - Windows CI: fix the shell-script test fakes, the 30 s process-group kill and the pin-file permission check (docs/known-issues.md).

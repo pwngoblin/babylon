@@ -1,8 +1,10 @@
 package web
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -393,5 +395,64 @@ func TestScheduleAPI(t *testing.T) {
 	}
 	if rr := hn.do("DELETE", "/api/schedules/1", ""); rr.Code != 200 {
 		t.Errorf("delete = %d", rr.Code)
+	}
+}
+
+func TestTriageAndAssetAPIs(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	st := h.app.St
+	scan, _ := st.CreateScan(ctx, "s", "basic", []string{"10.0.0.5"}, map[string]any{})
+	st.IngestHost(ctx, scan, model.Host{Address: "10.0.0.5", State: "up"})
+	st.RecordFinding(ctx, scan, model.Finding{Fingerprint: "f1", Address: "10.0.0.5", Title: "Open thing", Severity: "high", Confidence: model.ConfConfirmed, Engine: "native", EngineRef: "x"})
+	fs, _ := st.ListFindings(ctx, scan, "")
+	id := fs[0].ID
+
+	// Validation errors come back as 400 with the reason.
+	for name, body := range map[string]string{
+		"no reason":         fmt.Sprintf(`{"finding_id":%d,"status":"false_positive","reason":" "}`, id),
+		"risk without days": fmt.Sprintf(`{"finding_id":%d,"status":"accepted_risk","reason":"ok"}`, id),
+		"risk too long":     fmt.Sprintf(`{"finding_id":%d,"status":"accepted_risk","reason":"ok","expires_days":999}`, id),
+		"unknown field":     fmt.Sprintf(`{"finding_id":%d,"status":"false_positive","reason":"ok","admin":true}`, id),
+		"missing finding":   `{"finding_id":9999,"status":"false_positive","reason":"ok"}`,
+	} {
+		if c := h.do("POST", "/api/triage", body); c.Code != 400 {
+			t.Errorf("%s: want 400, got %d %s", name, c.Code, c.Body.String())
+		}
+	}
+	ok := fmt.Sprintf(`{"finding_id":%d,"status":"accepted_risk","reason":"patch window","expires_days":30}`, id)
+	if c := h.do("POST", "/api/triage", ok); c.Code != 200 {
+		t.Fatalf("set triage: %d %s", c.Code, c.Body.String())
+	}
+	if c := h.do("POST", "/api/triage", ok, noCookie()); c.Code != 401 {
+		t.Errorf("an unauthenticated write must be refused: %d", c.Code)
+	}
+	if c := h.do("POST", "/api/triage", ok, withHeader(csrfHeader, "")); c.Code == 200 {
+		t.Errorf("a write without the CSRF header must be refused: %d", c.Code)
+	}
+	list := h.do("GET", "/api/triage", "")
+	if !strings.Contains(list.Body.String(), `"reason":"patch window"`) || !strings.Contains(list.Body.String(), `"active":true`) {
+		t.Fatalf("list: %s", list.Body.String())
+	}
+	sum := h.do("GET", "/api/scans/1", "")
+	if strings.Contains(sum.Body.String(), `"high":1`) {
+		t.Errorf("a triaged finding must not be counted: %s", sum.Body.String())
+	}
+	if c := h.do("DELETE", fmt.Sprintf("/api/triage/%d", id), ""); c.Code != 200 {
+		t.Errorf("delete: %d", c.Code)
+	}
+	if c := h.do("DELETE", fmt.Sprintf("/api/triage/%d", id), ""); c.Code != 404 {
+		t.Errorf("deleting twice: %d", c.Code)
+	}
+
+	if c := h.do("POST", "/api/assets", `{"address":"10.0.0.5","criticality":"critical","fragile":true,"tags":["db"," prod ",""]}`); c.Code != 200 {
+		t.Fatalf("asset update: %d %s", c.Code, c.Body.String())
+	}
+	if c := h.do("POST", "/api/assets", `{"address":"10.0.0.5","criticality":"urgent"}`); c.Code != 400 {
+		t.Errorf("bad criticality: %d", c.Code)
+	}
+	a := h.do("GET", "/api/assets", "")
+	if !strings.Contains(a.Body.String(), `"criticality":"critical"`) || !strings.Contains(a.Body.String(), `"fragile":true`) || !strings.Contains(a.Body.String(), `"tags":["db","prod"]`) {
+		t.Fatalf("assets: %s", a.Body.String())
 	}
 }

@@ -73,6 +73,9 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   try {
     if (parts[0] === 'new') { setNav('new'); await newScanView(); }
+    else if (parts[0] === 'assets') { setNav('assets'); await assetsView(); }
+    else if (parts[0] === 'trends') { setNav('trends'); await trendsView(); }
+    else if (parts[0] === 'triage') { setNav('triage'); await triageView(); }
     else if (parts[0] === 'schedules') { setNav('schedules'); await schedulesView(); }
     else if (parts[0] === 'status') { setNav('status'); await statusView(); }
     else if (parts[0] === 'scan' && parts[1]) { setNav('scans'); await scanView(+parts[1], parts[2] || 'overview'); }
@@ -126,6 +129,84 @@ async function scansView() {
     el('a', { class: 'btn primary', href: '#/new' }, 'New scan')), body);
   await render();
   poll(() => render().catch(() => {}), 2500);
+}
+
+// ---------- assets ----------
+const CRITS = ['low', 'medium', 'high', 'critical'];
+async function assetsView() {
+  const body = el('div');
+  const render = async () => {
+    const list = await api('/api/assets');
+    clear(body);
+    const addr = el('input', { type: 'text', placeholder: '10.0.0.5 or host name', 'aria-label': 'New host address' });
+    body.append(el('div', { class: 'row', style: 'margin-bottom:12px;gap:8px' }, addr,
+      el('button', { onclick: async () => {
+        try { await api('/api/assets', { method: 'POST', body: { address: addr.value.trim(), criticality: 'medium' } }); toast('Host added'); render(); } catch (e) { toast(e.message); }
+      } }, 'Add host')));
+    if (!list.length) { body.append(el('div', { class: 'card muted' }, 'No hosts yet. Run a scan, or add a host above to set its criticality before the first scan.')); return; }
+    const rows = list.map(a => {
+      const crit = el('select', { 'aria-label': 'Criticality of ' + a.address }, ...CRITS.map(c => el('option', { value: c, selected: a.criticality === c }, c)));
+      const frag = el('input', { type: 'checkbox', checked: a.fragile, 'aria-label': 'Fragile: ' + a.address });
+      const tags = el('input', { type: 'text', value: (a.tags || []).join(', '), 'aria-label': 'Tags for ' + a.address, style: 'width:140px' });
+      const o = a.open_findings || {};
+      return el('tr', {},
+        el('td', { class: 'mono' }, a.address),
+        el('td', { class: 'muted' }, (a.hostnames || []).join(', ') || a.os || ''),
+        el('td', {}, crit), el('td', {}, frag), el('td', {}, tags),
+        el('td', {}, SEVS.slice(0, 4).map(k => o[k] ? el('span', { class: 'sev sev-' + k, style: 'margin-right:4px' }, o[k] + ' ' + k) : null), (!o.critical && !o.high && !o.medium && !o.low) ? el('span', { class: 'muted' }, 'none') : null),
+        el('td', {}, el('button', { onclick: async () => {
+          try {
+            await api('/api/assets', { method: 'POST', body: { address: a.address, criticality: crit.value, fragile: frag.checked, tags: tags.value.split(',').map(x => x.trim()).filter(Boolean) } });
+            toast('Saved ' + a.address);
+          } catch (e) { toast(e.message); }
+        } }, 'Save')));
+    });
+    body.append(el('div', { class: 'table-wrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Host', 'Name / OS', 'Criticality', 'Fragile', 'Tags', 'Open findings (latest scan)', ''].map(h => el('th', {}, h)))),
+      el('tbody', {}, rows))));
+  };
+  mount(el('h1', {}, 'Assets'),
+    el('p', { class: 'sub' }, 'Criticality ranks a host’s findings higher. A fragile host (old appliance, PLC, printer) gets no active probes or template requests; it is still port-scanned.'), body);
+  await render();
+}
+
+// ---------- trends ----------
+async function trendsView() {
+  const series = await api('/api/trends');
+  const body = el('div');
+  if (!series.length) body.append(el('div', { class: 'card muted' }, 'No completed scans yet.'));
+  for (const s of series) {
+    body.append(el('h2', { class: 'mono' }, (s.targets || []).join(', ')),
+      el('div', { class: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, ...['Scan', 'Finished', 'Hosts', 'Critical', 'High', 'Medium', 'Low', 'New', 'Resolved'].map(h => el('th', {}, h)))),
+        el('tbody', {}, s.points.map((p, i) => el('tr', { class: 'click', onclick: () => { location.hash = '#/scan/' + p.scan_id; } },
+          el('td', {}, '#' + p.scan_id, p.had_failed_jobs ? el('span', { class: 'badge s-partial', style: 'margin-left:6px', title: 'Some jobs failed; new and resolved may be skewed' }, 'partial') : null),
+          el('td', { class: 'muted' }, fmtTime(p.finished_at)), el('td', {}, p.hosts),
+          ...['critical', 'high', 'medium', 'low'].map(k => el('td', {}, (p.findings || {})[k] || 0)),
+          el('td', {}, i ? p.new : '–'), el('td', {}, i ? p.resolved : '–')))))));
+  }
+  mount(el('h1', {}, 'Trends'),
+    el('p', { class: 'sub' }, 'Open findings over time for each set of targets you scan repeatedly. New and resolved compare each scan with the previous scan of the same targets; triaged findings are not counted.'), body);
+}
+
+// ---------- triage ----------
+async function triageView() {
+  const body = el('div');
+  const render = async () => {
+    const list = await api('/api/triage');
+    clear(body);
+    if (!list.length) { body.append(el('div', { class: 'card muted' }, 'No triage decisions. Open a finding and choose “Triage this finding”.')); return; }
+    body.append(el('div', { class: 'table-wrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Finding', 'Host', 'Decision', 'Reason', 'Expires', ''].map(h => el('th', {}, h)))),
+      el('tbody', {}, list.map(x => el('tr', {},
+        el('td', {}, sevChip(x.severity), ' ', x.title), el('td', { class: 'mono' }, x.host + (x.port ? ':' + x.port : '')),
+        el('td', {}, x.status.replace('_', ' '), x.active ? null : el('span', { class: 'badge s-failed', style: 'margin-left:6px' }, 'expired')),
+        el('td', {}, x.reason), el('td', { class: 'muted' }, x.expires_at ? fmtTime(x.expires_at) : 'never'),
+        el('td', {}, el('button', { onclick: async () => { await api('/api/triage/' + x.finding_id, { method: 'DELETE' }); toast('Finding counts again'); render(); } }, 'Remove'))))))));
+  };
+  mount(el('h1', {}, 'Triage'),
+    el('p', { class: 'sub' }, 'Accepted risks and false positives are hidden from counts and reports until they expire. An expired decision brings the finding back.'), body);
+  await render();
 }
 
 // ---------- schedules ----------
@@ -379,7 +460,24 @@ async function scanView(id, tab) {
       ...sec('Synopsis', f.synopsis), ...sec('Description', f.description), ...sec('Remediation', f.remediation),
       el('h4', {}, 'Confidence'), el('p', {}, f.confidence + ' (' + f.detection + '-based)'),
       (f.cve_ids || []).length ? [el('h4', {}, 'CVE'), el('p', {}, ...f.cve_ids.flatMap((c, i) => [i ? ', ' : '', cveLink(c)]))] : null,
-      f.evidence ? [el('h4', {}, 'Evidence'), el('pre', {}, f.evidence)] : null);
+      f.evidence ? [el('h4', {}, 'Evidence'), el('pre', {}, f.evidence)] : null,
+      f.triage_note ? el('div', { class: 'alert warn' }, f.triage_note) : null,
+      f.id ? triageForm(f) : null);
+  }
+
+  // Lets a person mark a finding as accepted risk (with an expiry) or a false positive.
+  function triageForm(f) {
+    const status = el('select', { 'aria-label': 'Decision' }, el('option', { value: 'accepted_risk' }, 'Accepted risk (expires)'), el('option', { value: 'false_positive' }, 'False positive'));
+    const reason = el('input', { type: 'text', placeholder: 'Reason (required)', 'aria-label': 'Reason', style: 'min-width:240px' });
+    const days = el('input', { type: 'number', min: 1, max: 365, value: 90, 'aria-label': 'Days until the decision expires', style: 'width:80px' });
+    return el('details', { style: 'margin-top:10px' }, el('summary', {}, 'Triage this finding'),
+      el('div', { class: 'row', style: 'gap:8px;margin-top:8px;flex-wrap:wrap' }, status, reason, el('span', {}, 'for ', days, ' days'),
+        el('button', { onclick: async () => {
+          try {
+            await api('/api/triage', { method: 'POST', body: { finding_id: f.id, status: status.value, reason: reason.value, expires_days: +days.value } });
+            toast('Decision saved'); route();
+          } catch (e) { toast(e.message); }
+        } }, 'Save decision')));
   }
 
   function hostsTab(rep) {
