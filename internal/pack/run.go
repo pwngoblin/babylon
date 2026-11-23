@@ -383,7 +383,11 @@ func (d *Def) runHTTP(ctx context.Context, host string, s store.ServiceInfo) (st
 		if !st.Expect.check(resp.StatusCode, resp.Header, body, caps) {
 			return "", nil, false
 		}
-		evidence = append(evidence, fmt.Sprintf("%s %s -> %d\n%s", st.HTTP.Method, st.HTTP.Path, resp.StatusCode, snippet(body, 300)))
+		line := fmt.Sprintf("%s %s -> %d", st.HTTP.Method, st.HTTP.Path, resp.StatusCode)
+		for name := range st.Expect.header {
+			line += fmt.Sprintf("\n%s: %s", name, snippet(resp.Header.Get(name), 200))
+		}
+		evidence = append(evidence, line+"\n"+snippet(body, 300))
 	}
 	return strings.Join(evidence, "\n"), caps, true
 }

@@ -1,0 +1,194 @@
+schema: 1
+checks:
+  - id: BBL-TCP-0007
+    name: FTP server does not offer TLS
+    family: FTP
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [ftp], ports: [21] }
+    steps:
+      - { read: 512, expect: { body: '^220' } }
+      - { send: "FEAT\r\n", read: 2048, expect: { body: '(?m)^211', not: '(?i)AUTH (TLS|SSL)' } }
+    finding:
+      title: FTP server cannot encrypt logins
+      synopsis: FTP usernames, passwords and files cross the network in cleartext.
+      description: The server's FEAT list has no AUTH TLS, so credentials and data can be captured on the network path.
+      remediation: Enable explicit FTPS (AUTH TLS) and require it, or replace FTP with SFTP.
+    controls: ["NIST-800-53:SC-8", "NIST-800-53:IA-5"]
+    tests:
+      - { name: plain, want: finding, responses: [{ data: "220 ProFTPD ready\r\n" }, { data: "211-Features:\r\n MDTM\r\n SIZE\r\n211 End\r\n" }] }
+      - { name: tls, want: none, responses: [{ data: "220 ProFTPD ready\r\n" }, { data: "211-Features:\r\n AUTH TLS\r\n PBSZ\r\n211 End\r\n" }] }
+
+  - id: BBL-TCP-0008
+    name: SMTP server does not offer STARTTLS
+    family: SMTP problems
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [smtp, submission], ports: [25, 587] }
+    steps:
+      - { read: 512, expect: { body: '^220' } }
+      - { send: "EHLO babylon.scanner\r\n", read: 2048, expect: { body: '(?m)^250[ -]', not: '(?i)STARTTLS' } }
+    finding:
+      title: SMTP server does not support STARTTLS
+      synopsis: Mail and any SMTP credentials are exchanged in cleartext.
+      description: The EHLO reply has no STARTTLS capability, so connections cannot be encrypted and are open to eavesdropping and downgrade.
+      remediation: Configure a certificate and enable STARTTLS (Postfix smtpd_tls_security_level = may or encrypt; require it on submission).
+    controls: ["NIST-800-53:SC-8"]
+    tests:
+      - { name: plain, want: finding, responses: [{ data: "220 mx ESMTP\r\n" }, { data: "250-mx\r\n250-SIZE 10240000\r\n250 8BITMIME\r\n" }] }
+      - { name: tls, want: none, responses: [{ data: "220 mx ESMTP\r\n" }, { data: "250-mx\r\n250-STARTTLS\r\n250 8BITMIME\r\n" }] }
+
+  - id: BBL-TCP-0009
+    name: POP3 server does not offer STLS
+    family: POP3 problems
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [pop3], ports: [110] }
+    steps:
+      - { read: 512, expect: { body: '^\+OK' } }
+      - { send: "CAPA\r\n", read: 2048, expect: { body: '(?m)^\+OK', not: '(?im)^STLS' } }
+    finding:
+      title: POP3 server cannot encrypt logins
+      synopsis: Mailbox passwords are sent in cleartext.
+      description: The CAPA list has no STLS, so the POP3 session cannot be upgraded to TLS.
+      remediation: Enable STLS and require it before authentication, or use POP3S on port 995.
+    controls: ["NIST-800-53:SC-8", "NIST-800-53:IA-5"]
+    tests:
+      - { name: plain, want: finding, responses: [{ data: "+OK ready\r\n" }, { data: "+OK\r\nUSER\r\nTOP\r\n.\r\n" }] }
+      - { name: tls, want: none, responses: [{ data: "+OK ready\r\n" }, { data: "+OK\r\nSTLS\r\nUSER\r\n.\r\n" }] }
+
+  - id: BBL-TCP-0010
+    name: IMAP server does not offer STARTTLS
+    family: IMAP problems
+    severity: low
+    kind: probe
+    transport: tcp
+    when: { services: [imap], ports: [143] }
+    steps:
+      - { read: 512, expect: { body: '^\* OK' } }
+      - { send: "a001 CAPABILITY\r\n", read: 2048, expect: { body: '(?m)^\* CAPABILITY', not: '(?i)STARTTLS' } }
+    finding:
+      title: IMAP server cannot encrypt logins
+      synopsis: Mailbox passwords are sent in cleartext.
+      description: The CAPABILITY list has no STARTTLS, so the IMAP session cannot be upgraded to TLS.
+      remediation: Enable STARTTLS and require it before authentication, or use IMAPS on port 993.
+    controls: ["NIST-800-53:SC-8", "NIST-800-53:IA-5"]
+    tests:
+      - { name: plain, want: finding, responses: [{ data: "* OK IMAP4rev1 ready\r\n" }, { data: "* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\na001 OK done\r\n" }] }
+      - { name: tls, want: none, responses: [{ data: "* OK IMAP4rev1 ready\r\n" }, { data: "* CAPABILITY IMAP4rev1 STARTTLS\r\na001 OK done\r\n" }] }
+
+  - id: BBL-TCP-0011
+    name: Java RMI registry exposed
+    family: Misc.
+    severity: medium
+    kind: probe
+    transport: tcp
+    when: { services: [java-rmi, rmiregistry], ports: [1099] }
+    steps:
+      - { send_hex: "4a524d49 0002 4b", read: 256, expect: { body: '^N' } }
+    finding:
+      title: Java RMI registry accepts connections from the network
+      synopsis: A remote object registry is reachable.
+      description: An exposed RMI registry lets a remote party list and call remote objects, and has been a route to remote code execution through unsafe deserialization.
+      remediation: Bind the registry to localhost or a management network, firewall port 1099, and apply current JDK deserialization filters.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:AC-17"]
+    tests:
+      - { name: registry, want: finding, responses: [{ data: "N\x00\x0910.0.0.5\x00\x00\x00\x00" }] }
+      - { name: other, want: none, responses: [{ data: "HTTP/1.1 400 Bad Request\r\n" }] }
+
+  - id: BBL-TCP-0012
+    name: Java debug port (JDWP) exposed
+    family: Backdoors
+    severity: critical
+    kind: probe
+    transport: tcp
+    when: { services: [jdwp], ports: [5005, 8000] }
+    steps:
+      - { send: "JDWP-Handshake", read: 64, expect: { body: '^JDWP-Handshake' } }
+    finding:
+      title: Java Debug Wire Protocol is reachable
+      synopsis: A JVM debugger port allows remote code execution.
+      description: The server completed the JDWP handshake. Anyone who can connect can attach a debugger and run arbitrary code in the JVM.
+      remediation: Remove -agentlib:jdwp / -Xrunjdwp from production start-up options, or bind the debug address to localhost.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:AC-17"]
+    tests:
+      - { name: jdwp, want: finding, responses: [{ data: "JDWP-Handshake" }] }
+      - { name: other, want: none, responses: [{ data: "SSH-2.0-OpenSSH" }] }
+
+  - id: BBL-RSVC-0001
+    name: Berkeley r-services (rexec, rlogin, rsh) enabled
+    family: Service detection
+    severity: high
+    kind: passive
+    when: { ports: [512, 513, 514], proto: tcp }
+    match:
+      - { field: name, regex: '^(exec|login|shell)$' }
+    finding:
+      title: Legacy r-service is listening on port ${port}
+      synopsis: A cleartext remote login service with host-based trust is enabled.
+      description: rexec, rlogin and rsh send credentials in cleartext and rely on host-based trust (.rhosts), which is easily abused to move between machines.
+      remediation: Disable the r-services and use SSH.
+    controls: ["NIST-800-53:CM-7", "NIST-800-53:SC-8", "NIST-800-53:IA-2"]
+    tests:
+      - { name: rsh, want: finding, service: { name: shell, port: 514 } }
+      - { name: other, want: none, service: { name: ssh, port: 514 } }
+
+  - id: BBL-EOL-0006
+    name: MongoDB 5.0 or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [mongodb, mongod], ports: [27017] }
+    match:
+      - { field: product, regex: '^MongoDB' }
+      - { field: version, regex: '^([0-4]\.|5\.0\.)' }
+    finding:
+      title: Unsupported MongoDB ${version}
+      synopsis: This MongoDB release no longer receives security fixes.
+      description: MongoDB 5.0 reached end of life in October 2024, and earlier versions before that.
+      remediation: Upgrade to a supported MongoDB release.
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: mongo-3.6, want: finding, service: { name: mongodb, product: MongoDB, version: 3.6.23 } }
+      - { name: mongo-8, want: none, service: { name: mongodb, product: MongoDB, version: 8.0.1 } }
+
+  - id: BBL-EOL-0007
+    name: Elasticsearch 6.x or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [http, http-alt, elasticsearch], ports: [9200] }
+    match:
+      - { field: product, regex: '^Elasticsearch' }
+      - { field: version, regex: '^[0-6]\.' }
+    finding:
+      title: Unsupported Elasticsearch ${version}
+      synopsis: This Elasticsearch release no longer receives security fixes.
+      description: Elasticsearch 6.x reached end of life in February 2022, and earlier versions before that.
+      remediation: Upgrade to a supported Elasticsearch release.
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: es-5, want: finding, service: { name: http, product: Elasticsearch REST API, version: 5.6.16 } }
+      - { name: es-8, want: none, service: { name: http, product: Elasticsearch REST API, version: 8.12.0 } }
+
+  - id: BBL-EOL-0008
+    name: Microsoft SQL Server 2014 or earlier is end of life
+    family: Unsupported software
+    severity: high
+    kind: passive
+    when: { services: [ms-sql-s], ports: [1433] }
+    match:
+      - { field: product, regex: '^Microsoft SQL Server' }
+      - { field: product, regex: '(2000|2005|2008|2012|2014)\b' }
+    finding:
+      title: Unsupported ${product}
+      synopsis: This SQL Server release no longer receives security updates.
+      description: SQL Server 2014 and earlier are out of Microsoft extended support.
+      remediation: Upgrade to a supported SQL Server release.
+    controls: ["NIST-800-53:SA-22", "NIST-800-53:SI-2"]
+    tests:
+      - { name: sql-2008, want: finding, service: { name: ms-sql-s, product: Microsoft SQL Server 2008, version: 10.50.1600 } }
+      - { name: sql-2022, want: none, service: { name: ms-sql-s, product: Microsoft SQL Server 2022, version: 16.0.1000 } }

@@ -1,0 +1,201 @@
+schema: 1
+checks:
+  - id: BBL-HTTP-0013
+    name: Apache Flink dashboard exposed
+    family: Big Data
+    severity: high
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8081] }
+    steps:
+      - http: { path: /config }
+        expect: { status: 200, body: '"flink-version"\s*:\s*"(?P<ver>[^"]+)"' }
+    finding:
+      title: Apache Flink ${ver} dashboard is reachable without authentication
+      synopsis: Anyone who can connect can submit jobs to the cluster.
+      description: The Flink web interface has no authentication by default and lets users upload and run JAR files, which is remote code execution on the cluster.
+      remediation: Do not expose the dashboard. Put it behind an authenticating proxy or restrict it to administrative hosts.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"refresh-interval":10000,"timezone-name":"UTC","flink-version":"1.17.1","flink-revision":"abc"}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0014
+    name: HashiCorp Nomad API exposed without ACLs
+    family: Misc.
+    severity: high
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [4646] }
+    steps:
+      - http: { path: /v1/agent/self }
+        expect: { status: 200, body: '(?s)"config".*"member"' }
+    finding:
+      title: Nomad API answers without authentication
+      synopsis: Cluster configuration is readable, so ACLs are not enforced.
+      description: With ACLs disabled anyone who reaches the API can read cluster state and submit jobs, which run commands on the nodes.
+      remediation: Enable ACLs (acl { enabled = true }), enable mutual TLS, and bind the API to a private interface.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: open, want: finding, responses: [{ status: 200, body: '{"config":{"Region":"global"},"member":{"Name":"n1"},"stats":{}}' }] }
+      - { name: acl, want: none, responses: [{ status: 403, body: 'Permission denied' }] }
+
+  - id: BBL-HTTP-0015
+    name: Kafka Connect REST API exposed
+    family: Big Data
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8083] }
+    steps:
+      - http: { path: / }
+        expect: { status: 200, body: '"kafka_cluster_id"' }
+    finding:
+      title: Kafka Connect REST API is reachable without authentication
+      synopsis: Connectors can be listed and created by anyone who can connect.
+      description: The Connect REST API has no authentication by default. Creating connectors can read local files or reach internal systems from the worker host.
+      remediation: Restrict the REST listener to a private interface, add an authentication extension, and firewall port 8083.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: open, want: finding, responses: [{ status: 200, body: '{"version":"3.6.0","commit":"abc","kafka_cluster_id":"xyz"}' }] }
+      - { name: other, want: none, responses: [{ status: 200, body: '{"hello":"world"}' }] }
+
+  - id: BBL-HTTP-0016
+    name: cAdvisor API exposed
+    family: Misc.
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8080, 8081] }
+    steps:
+      - http: { path: /api/v1.3/machine }
+        expect: { status: 200, body: '"num_cores"' }
+    finding:
+      title: cAdvisor container metrics are readable without authentication
+      synopsis: Host hardware details and every container's name and image are exposed.
+      description: cAdvisor shows the machine layout and all running containers with their images and resource use, which helps an attacker map the host.
+      remediation: Bind cAdvisor to localhost or a monitoring network, or put it behind an authenticating proxy.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"num_cores":8,"cpu_frequency_khz":2400000}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0017
+    name: Prometheus node_exporter exposed
+    family: Misc.
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [9100] }
+    steps:
+      - http: { path: /metrics }
+        expect: { status: 200, body: '(?m)^node_exporter_build_info' }
+    finding:
+      title: node_exporter metrics are readable without authentication
+      synopsis: Detailed host metrics are exposed to the network.
+      description: node_exporter publishes kernel version, mounts, network interfaces and load, which is useful reconnaissance for an attacker.
+      remediation: Bind node_exporter to localhost or a monitoring network, or enable its TLS and basic-auth web config.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: "# HELP node_exporter_build_info A metric\nnode_exporter_build_info{version=\"1.7.0\"} 1\n" }] }
+      - { name: other, want: none, responses: [{ status: 200, body: 'go_goroutines 7' }] }
+
+  - id: BBL-HTTP-0018
+    name: Apache Spark master web UI exposed
+    family: Big Data
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8080, 8090] }
+    steps:
+      - http: { path: / }
+        expect: { status: 200, body: 'Spark Master at spark://' }
+    finding:
+      title: Apache Spark master UI is reachable
+      synopsis: Cluster nodes, running applications and the master URL are public.
+      description: The Spark master UI shows workers, applications and the spark:// URL used to submit jobs, and signals a cluster that may accept jobs from anyone.
+      remediation: Restrict the master and worker UIs and the submission ports (7077, 6066) to trusted hosts, and enable Spark authentication.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '<title>Spark Master at spark://10.0.0.5:7077</title>' }] }
+      - { name: other, want: none, responses: [{ status: 200, body: '<title>Welcome</title>' }] }
+
+  - id: BBL-HTTP-0019
+    name: Kubernetes Dashboard reachable
+    family: Containers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt, https-alt], ports: [8443, 8001, 30000, 32000] }
+    steps:
+      - http: { path: / }
+        expect: { status: 200, body: '<title>Kubernetes Dashboard</title>' }
+    finding:
+      title: Kubernetes Dashboard is reachable from the network
+      synopsis: The cluster management console is exposed.
+      description: The dashboard is a frequent target. If it allows skipping login or runs with a powerful service account, a visitor controls the cluster.
+      remediation: Keep the dashboard on ClusterIP behind kubectl proxy or an authenticating ingress, and never grant it cluster-admin.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '<html><head><title>Kubernetes Dashboard</title></head>' }] }
+      - { name: other, want: none, responses: [{ status: 200, body: '<title>Router</title>' }] }
+
+  - id: BBL-HTTP-0020
+    name: Traefik API exposed
+    family: Containers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt], ports: [8080, 8081] }
+    steps:
+      - http: { path: /api/rawdata }
+        expect: { status: 200, body: '"routers"' }
+    finding:
+      title: Traefik API and routing table are reachable
+      synopsis: The reverse proxy discloses every route and backend.
+      description: The Traefik API lists routers, services and middlewares, including internal backend addresses, which reveals the internal layout.
+      remediation: Do not enable the API in insecure mode in production. Serve it on a private entry point with authentication.
+    controls: ["NIST-800-53:AC-3", "NIST-800-53:CM-7"]
+    tests:
+      - { name: exposed, want: finding, responses: [{ status: 200, body: '{"routers":{"web@docker":{}},"middlewares":{},"services":{}}' }] }
+      - { name: other, want: none, responses: [{ status: 404, body: '' }] }
+
+  - id: BBL-HTTP-0021
+    name: HTTP Basic authentication over cleartext HTTP
+    family: Web Servers
+    severity: medium
+    kind: probe
+    transport: http
+    when: { services: [http, http-alt, http-proxy], ports: [80, 8080] }
+    steps:
+      - http: { path: /, scheme: http }
+        expect: { status: 401, header: { WWW-Authenticate: '(?i)^\s*Basic' } }
+    finding:
+      title: Web server asks for Basic credentials over unencrypted HTTP
+      synopsis: Passwords sent to this service can be read by anyone on the network path.
+      description: Basic authentication sends the username and password base64-encoded, not encrypted. Over plain HTTP they can be captured with a packet sniffer.
+      remediation: Serve the site over HTTPS only and redirect or disable the HTTP listener.
+    controls: ["NIST-800-53:SC-8", "NIST-800-53:IA-5"]
+    tests:
+      - { name: basic, want: finding, responses: [{ status: 401, header: { WWW-Authenticate: 'Basic realm="admin"' }, body: '' }] }
+      - { name: digest, want: none, responses: [{ status: 401, header: { WWW-Authenticate: 'Digest realm="admin", nonce="abc"' }, body: '' }] }
+
+  - id: BBL-HTTP-0022
+    name: HTTP server advertises PUT or DELETE
+    family: Web Servers
+    severity: low
+    kind: probe
+    transport: http
+    when: { services: [http, https, http-alt], ports: [80, 443, 8080, 8443] }
+    steps:
+      - http: { method: OPTIONS, path: / }
+        expect: { header: { Allow: '(?i)\b(PUT|DELETE)\b' } }
+    finding:
+      title: Web server lists PUT or DELETE among allowed methods
+      synopsis: The server says it accepts methods that modify content.
+      description: An Allow header naming PUT or DELETE suggests that uploads or deletions may be enabled (for example WebDAV). This check sends only OPTIONS and does not try the methods.
+      remediation: Disable methods the application does not need (Apache LimitExcept, nginx limit_except) and disable WebDAV where unused.
+    controls: ["NIST-800-53:CM-7"]
+    tests:
+      - { name: put-allowed, want: finding, responses: [{ status: 200, header: { Allow: 'GET, HEAD, POST, PUT, DELETE, OPTIONS' }, body: '' }] }
+      - { name: normal, want: none, responses: [{ status: 200, header: { Allow: 'GET, HEAD, POST, OPTIONS' }, body: '' }] }
