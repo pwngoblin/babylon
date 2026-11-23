@@ -14,6 +14,7 @@ import (
 	"babylon/internal/app"
 	"babylon/internal/lab"
 	"babylon/internal/policy"
+	"babylon/internal/scan"
 	"babylon/internal/store"
 )
 
@@ -143,6 +144,19 @@ func labRun(ctx context.Context, out io.Writer, home, manifestPath string, asJSO
 		return err
 	}
 	fmt.Fprintf(out, "Scan %s in %s\n\n", res.Summary.Status, time.Since(start).Round(time.Second))
+	// Nuclei-dependent expectations are only measured when every Nuclei job
+	// finished; otherwise a stalled tool would be scored as a detection miss.
+	nucleiOK := true
+	for _, stage := range []string{scan.StageNucleiDetect, scan.StageNucleiScan} {
+		if res.Summary.Counts[stage][store.JobFailed] > 0 {
+			nucleiOK = false
+		}
+	}
+	if nucleiOK {
+		caps = append(caps, "nuclei")
+	} else {
+		fmt.Fprintln(out, "Note: Nuclei jobs failed (see docs/known-issues.md); expectations that need Nuclei are not measured.")
+	}
 	if m.Scan.AllowActive {
 		caps = append(caps, "allow-active")
 	}

@@ -228,6 +228,11 @@ func Evaluate(m *Manifest, rows []store.FindingRow, opt Options) *Report {
 		o := Outcome{ID: e.ID}
 		if e.Needs != "" && !opt.Capabilities[e.Needs] {
 			o.Status, o.Detail = "skipped", "needs "+e.Needs
+			for _, f := range rows { // not measured, but still reviewed: not "unreviewed"
+				if e.Match.matches(f) {
+					used[f.ID] = true
+				}
+			}
 			r.Skipped++
 			r.Outcomes = append(r.Outcomes, o)
 			continue

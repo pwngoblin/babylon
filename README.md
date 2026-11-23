@@ -67,6 +67,13 @@ Other outputs: `scans export 3 --format nessus -o scan.nessus` gives a `.nessus`
 - Want a hard limit? Put allowed IPs/CIDRs (one per line) in `~/.babylon/scope.txt`. Babylon then refuses to scan anything outside that list.
 - Everything is stored in `~/.babylon/babylon.db`. Passwords are never saved.
 - It does not use Nessus or OpenVAS/Greenbone vulnerability content (licensing), so it will not match them on every check.
-- Early software. Expect rough edges.
+- Beta. What is verified on real systems and what is not:
+
+  | Area | State |
+  |---|---|
+  | Network scan, native checks (~36), CVE matching | measured on a 28-service lab: 19/19 expected findings, 0 false positives (`babylon lab run`) |
+  | Linux audit over SSH (Debian, Ubuntu, Alpine) | verified against real containers |
+  | Nuclei web/CVE templates | **stalls on some machines** (`babylon doctor` tells you); see [known issues](docs/known-issues.md) |
+  | Windows (WinRM), macOS (SSH), RHEL-family audits, UDP stage | **experimental**: tested against fakes and mocks, not real hosts |
 
 More detail: [ARCHITECTURE.md](ARCHITECTURE.md) · [status](docs/roadmap/STATUS.md) · [roadmap](docs/roadmap/ROADMAP.md) · License: Apache-2.0

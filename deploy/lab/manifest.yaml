@@ -7,7 +7,8 @@
 #
 #   expected   a finding that must be reported (at least at min_confidence)
 #   forbidden  a known false positive that must never be reported
-#   needs      scan option the expectation depends on: allow-active, deep, credentialed, root
+#   needs      what the expectation depends on: allow-active, deep, credentialed, root, nuclei (all Nuclei jobs finished),
+#              udp-return-path (lab host forwards UDP replies from a new source port; Linux only)
 #
 # Run:  babylon lab up && babylon lab run        (or: babylon lab check --scan N)
 version: 2
@@ -24,16 +25,16 @@ thresholds:
 expected:
   # ---- web servers and version matching ----
   - {id: apache-2449-cve, port: 18081, cve: CVE-2021-41773, min_confidence: tentative, note: "default image answers 403 on the traversal path, so version-based is the honest ceiling"}
-  - {id: apache-2449-version, port: 18081, title: "apache", min_confidence: confirmed}
+  - {id: apache-2449-version, port: 18081, title: "apache", min_confidence: confirmed, needs: nuclei}
   - {id: nginx-116-cve, port: 18082, cve: CVE-2019-20372, min_confidence: tentative}
-  - {id: nginx-116-version, port: 18082, title: "nginx", min_confidence: confirmed}
+  - {id: nginx-116-version, port: 18082, title: "nginx", min_confidence: confirmed, needs: nuclei}
   - {id: openssh-84-cves, port: 12222, product: "openssh", min_confidence: tentative}
   - {id: redis-50-cves, port: 16379, product: "redis", min_confidence: tentative}
-  - {id: vsftpd-cve, port: 12121, cve: CVE-2021-30047, min_confidence: firm}
+  - {id: vsftpd-cve, port: 12121, cve: CVE-2021-30047, min_confidence: firm, needs: nuclei}
   # ---- web applications (detection, not DAST) ----
-  - {id: juice-shop-detected, port: 13000, title: "juice", min_confidence: confirmed}
-  - {id: security-headers, port: 13000, title: "security headers", min_confidence: confirmed}
-  - {id: dvwa-exposure, port: 18083, title: "dvwa|phpinfo|configuration", min_confidence: confirmed}
+  - {id: juice-shop-detected, port: 13000, title: "juice", min_confidence: confirmed, needs: nuclei}
+  - {id: security-headers, port: 13000, title: "security headers", min_confidence: confirmed, needs: nuclei}
+  - {id: dvwa-exposure, port: 18083, title: "dvwa|phpinfo|configuration", min_confidence: confirmed, needs: nuclei}
   # ---- misconfiguration (native checks and NSE) ----
   - {id: redis-noauth, port: 16379, title: "redis", family: Misconfiguration, min_confidence: confirmed}
   - {id: ssh-weak-algorithms, port: 12222, title: "weak algorithms", min_confidence: confirmed}
@@ -50,7 +51,7 @@ expected:
   - {id: ldap-anonymous-bind, port: 389, title: "LDAP server accepts anonymous", min_confidence: confirmed, needs: allow-active}
   - {id: consul-open, port: 8500, title: "consul", min_confidence: confirmed, needs: allow-active}
   - {id: rsync-modules, port: 873, title: "rsync", min_confidence: confirmed, needs: allow-active}
-  - {id: tftp-open, port: 69, proto: udp, title: "TFTP", min_confidence: confirmed, needs: allow-active}
+  - {id: tftp-open, port: 69, proto: udp, title: "TFTP", min_confidence: confirmed, needs: udp-return-path, note: "Docker Desktop for Mac drops replies that come from a new source port, which TFTP always uses; enable with --has udp-return-path on a Linux Docker host"}
   - {id: snmp-public, port: 161, proto: udp, title: "SNMP", min_confidence: confirmed, needs: allow-active}
 
 forbidden:
