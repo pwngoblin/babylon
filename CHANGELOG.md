@@ -12,6 +12,7 @@
 - Webhook notifications for new findings only (`~/.babylon/notify.yaml`, `babylon notify test`).
 - Synthetic scale test (5,000 hosts, 65,000 findings); fixed two slow queries it exposed (findings listing and the asset list).
 - Credentialed PostgreSQL and MySQL/MariaDB audits (`--db-user`, `--db-password-env`): 15 read-only rules, refuses plaintext logins by default.
+- SMB guest-access check: detects servers that grant a session to unknown users and lists readable shares (read-only).
 - `docs/roadmap/PLAN.md`: plan for closing the gap to Nessus.
 
 ## 0.1.1

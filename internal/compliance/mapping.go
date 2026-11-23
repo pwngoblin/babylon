@@ -76,7 +76,7 @@ var builtin = map[string][]string{
 	"mysql-probe": {"SC-8", "SA-22"}, "nfs-exports": {"AC-3", "CM-7"}, "ntp-mode6": {"CM-7"},
 	"postgres-tls-probe": {"SC-8"}, "prometheus-open": {"AC-3", "CM-7"}, "rdp-security-layer": {"IA-2", "SC-8"},
 	"redis-unauth": {"AC-3"}, "rsync-modules-open": {"AC-3"}, "smb-ms17-010": {"SI-2"}, "smb-signing": {"SC-8"},
-	"smbv1": {"CM-7", "SC-8"}, "snmp-public": {"AC-3", "PCI-DSS-4:2.2.2"}, "snmp-public-probe": {"AC-3", "PCI-DSS-4:2.2.2"},
+	"smbv1": {"CM-7", "SC-8"}, "smb-guest-access": {"AC-3", "AC-14"}, "snmp-public": {"AC-3", "PCI-DSS-4:2.2.2"}, "snmp-public-probe": {"AC-3", "PCI-DSS-4:2.2.2"},
 	"solr-admin-open": {"AC-3"}, "ssh-weak-algorithms": {"SC-13", "SC-8"}, "telnet-service": {"CM-7", "SC-8"},
 	"tftp-open": {"AC-3", "CM-7"}, "tls-probe": {"SC-8", "SC-13"}, "tls-weakness": {"SC-8", "SC-13"},
 	"vnc-no-auth": {"IA-2", "AC-3"}, "windows-eol": {"SA-22", "SI-2"}, "winrm-http": {"SC-8"},

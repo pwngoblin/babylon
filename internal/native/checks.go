@@ -30,6 +30,7 @@ func Builtin() []Check {
 		x11Open, nfsExports, dnsRecursion, snmpPublic, vncNoAuth, telnetService, httpTrace, tlsWeakness,
 	}
 	base = append(base, windowsChecks()...)
+	base = append(base, smbChecks()...)
 	return append(base, probeChecks()...)
 }
 

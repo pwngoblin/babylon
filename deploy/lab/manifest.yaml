@@ -41,6 +41,7 @@ expected:
   - {id: mongo-noauth, port: 27017, title: "mongo", min_confidence: confirmed}
   - {id: memcached-open, port: 11211, title: "memcached", min_confidence: confirmed}
   - {id: smb-signing, port: 445, title: "smb.*signing", min_confidence: confirmed}
+  - {id: smb-guest-share, port: 445, title: "SMB share readable without credentials", min_confidence: confirmed}
   # ---- active probes (need --allow-active) ----
   - {id: mariadb-eol, port: 3306, title: "Unsupported Database Version: MariaDB 10.5", min_confidence: firm, needs: allow-active}
   - {id: mariadb-no-tls, port: 3306, title: "does not offer TLS", min_confidence: confirmed, needs: allow-active}

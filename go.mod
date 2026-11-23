@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/go-sql-driver/mysql v1.8.1
+	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/lib/pq v1.10.9
 	github.com/masterzen/winrm v0.0.0-20261114181639-d693523ae428
 	github.com/spf13/cobra v1.10.2
@@ -17,6 +18,7 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.2-0.20261111092545-5846b35b583b // indirect
 	github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/geoffgarside/ber v1.1.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
