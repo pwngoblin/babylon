@@ -10,12 +10,26 @@ import (
 	"babylon/internal/policy"
 )
 
+// Available returns the built-in checks permitted at a safety level. Checks above
+// it are not offered at all (and Order would reject them), so a scan without
+// --allow-active never even loads the probing checks.
+func Available(max policy.Safety) []Check {
+	var out []Check
+	for _, c := range Builtin() {
+		if c.Safety <= max {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // Builtin returns Babylon's built-in checks.
 func Builtin() []Check {
-	return []Check{
+	base := []Check{
 		sshWeakAlgorithms, redisUnauth, ftpAnonymous, smbSigning, smbv1, memcachedOpen, mongodbOpen,
 		x11Open, nfsExports, dnsRecursion, snmpPublic, vncNoAuth, telnetService, httpTrace, tlsWeakness,
 	}
+	return append(base, probeChecks()...)
 }
 
 func scriptNeeds(id string) func(*Env) string {

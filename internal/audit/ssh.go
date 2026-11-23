@@ -159,6 +159,7 @@ func (p HostKeyPolicy) callback() (ssh.HostKeyCallback, error) {
 			return err
 		}
 		defer f.Close()
+		fmt.Fprintf(os.Stderr, "notice: trusting new SSH host key for %s on first use (%s); pinned in %s\n", hostname, ssh.FingerprintSHA256(key), pin)
 		_, err = fmt.Fprintln(f, knownhosts.Line([]string{knownhosts.Normalize(remote.String())}, key))
 		return err
 	}, nil

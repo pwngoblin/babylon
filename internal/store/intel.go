@@ -476,3 +476,75 @@ func (s *Store) CountOSV(ctx context.Context) (advisories, ranges int, err error
 	err = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM osv_affected`).Scan(&ranges)
 	return
 }
+
+// AllKEV returns the whole CISA KEV catalogue (a couple of thousand rows).
+func (s *Store) AllKEV(ctx context.Context) ([]KEVEntry, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT cve_id, COALESCE(vendor,''), COALESCE(product,''), COALESCE(name,''), COALESCE(date_added,''), COALESCE(ransomware_use,'') FROM kev ORDER BY cve_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []KEVEntry
+	for rows.Next() {
+		var k KEVEntry
+		if err := rows.Scan(&k.CVE, &k.Vendor, &k.Product, &k.Name, &k.DateAdded, &k.Ransomware); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// AddCVEListRanges adds version ranges from cvelistV5 for CVEs that NVD has no
+// ranges for. NVD data always wins: a CVE with any NVD range is skipped, and
+// NVD metadata (description, CVSS) is never overwritten, only filled in when
+// missing. It returns how many CVEs received ranges.
+func (s *Store) AddCVEListRanges(ctx context.Context, recs []CVERecord) (int, error) {
+	added := 0
+	err := s.W.Do(ctx, func(tx *sql.Tx) error {
+		added = 0
+		up, err := tx.Prepare(`INSERT INTO cve(cve_id,published,modified,description,cvss_v3,cvss_v3_vector,vuln_status) VALUES(?,?,?,?,?,?,?)
+			ON CONFLICT(cve_id) DO UPDATE SET
+			  description=COALESCE(NULLIF(cve.description,''), excluded.description),
+			  cvss_v3=COALESCE(cve.cvss_v3, excluded.cvss_v3),
+			  cvss_v3_vector=COALESCE(cve.cvss_v3_vector, excluded.cvss_v3_vector)`)
+		if err != nil {
+			return err
+		}
+		defer up.Close()
+		ins, err := tx.Prepare(`INSERT INTO cpe_match(source,cve_id,vendor,product,target_sw,version_exact,v_start_incl,v_start_excl,v_end_incl,v_end_excl,vulnerable)
+			VALUES('cvelist',?,?,?,NULL,?,?,?,?,?,1)`)
+		if err != nil {
+			return err
+		}
+		defer ins.Close()
+		for _, r := range recs {
+			id := strings.ToUpper(r.ID)
+			var has int
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM cpe_match WHERE cve_id=? AND source='nvd')`, id).Scan(&has); err != nil {
+				return err
+			}
+			if has == 1 {
+				continue
+			}
+			var c3 any
+			if r.CVSS != nil {
+				c3 = *r.CVSS
+			}
+			if _, err := up.Exec(id, r.Published, r.Modified, r.Description, c3, nullable(r.Vector), r.Status); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`DELETE FROM cpe_match WHERE cve_id=? AND source='cvelist'`, id); err != nil {
+				return err
+			}
+			for _, m := range r.Matches {
+				if _, err := ins.Exec(id, m.Vendor, m.Product, nullable(m.Exact), nullable(m.StartIncl), nullable(m.StartExcl), nullable(m.EndIncl), nullable(m.EndExcl)); err != nil {
+					return err
+				}
+			}
+			added++
+		}
+		return nil
+	})
+	return added, err
+}

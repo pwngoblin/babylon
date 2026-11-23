@@ -49,3 +49,30 @@ func TestTimingProfilesShapeNmapArgs(t *testing.T) {
 		t.Error("unknown timing names must be rejected")
 	}
 }
+
+func TestUDPArgs(t *testing.T) {
+	res, err := policy.Resolve("full_unauth", policy.Flags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UDPArgs(res, []string{"10.0.0.5"}, "/tmp/u.xml", Opts{Privilege: PrivNone}); err == nil {
+		t.Error("UDP scanning without raw sockets must be refused, not degraded")
+	}
+	a, err := UDPArgs(res, []string{"10.0.0.5"}, "/tmp/u.xml", Opts{Privilege: PrivRoot, Timing: res.Timing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(a, "-sU") || !hasArg(a, "-p", UDPPorts) || !slices.Contains(a, "--open") {
+		t.Errorf("udp args: %v", a)
+	}
+	for _, bad := range []string{"-sS", "-sT", "--top-ports", "-p-", "-O"} {
+		if slices.Contains(a, bad) {
+			t.Errorf("udp scan must stay targeted, found %s", bad)
+		}
+	}
+	for _, port := range []string{"53", "123", "161", "623", "1900", "5353"} {
+		if !strings.Contains(","+UDPPorts+",", ","+port+",") {
+			t.Errorf("UDP port list is missing %s", port)
+		}
+	}
+}

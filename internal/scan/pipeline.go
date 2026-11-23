@@ -25,6 +25,7 @@ import (
 const (
 	StageSweep    = "sweep"
 	StagePortscan = "portscan"
+	StageUDP      = "udpscan"
 
 	ClassNmap = "nmap"
 )
@@ -43,6 +44,8 @@ type Options struct {
 	NucleiRate    int           // requests/second (default 100)
 	NucleiTimeout time.Duration // per job (default 45m)
 
+	timingHostTimeout time.Duration // set from the timing profile
+
 	Audit *AuditConfig // credentials for the credentialed stage (in memory only); nil disables it
 }
 
@@ -51,7 +54,9 @@ func (o *Options) defaults() {
 		o.SweepChunk = 1024
 	}
 	if o.ScanChunk == 0 {
-		o.ScanChunk = 128
+		// Small chunks: Nmap reports a host only when its whole group finishes, so one
+		// slow or tarpit host in a big chunk hides everyone else's results and stalls the scan.
+		o.ScanChunk = 16
 	}
 	if o.SweepTimeout == 0 {
 		o.SweepTimeout = 15 * time.Minute
@@ -61,6 +66,9 @@ func (o *Options) defaults() {
 	}
 	if o.HostTimeout == 0 {
 		o.HostTimeout = 30 * time.Minute
+		if o.timingHostTimeout > 0 {
+			o.HostTimeout = o.timingHostTimeout
+		}
 	}
 	if o.NucleiRate == 0 {
 		o.NucleiRate = 100
@@ -83,6 +91,7 @@ func Stages(res *policy.Resolved, st *store.Store, opt Options) []orchestrator.S
 }
 
 func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestrator.Stage, error) {
+	opt.timingHostTimeout = res.Timing.HostTimeout
 	if opt.NucleiRate == 0 {
 		opt.NucleiRate = res.Timing.NucleiRate // the profile sets the rate unless explicitly overridden
 	}
@@ -109,6 +118,29 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 			}, nopt),
 		})
 	}
+	if res.Template.UDPTop > 0 {
+		stages = append(stages, orchestrator.Stage{
+			Name:      StageUDP,
+			Class:     ClassNmap,
+			DependsOn: []string{StageSweep},
+			Plan: func(ctx context.Context, sc store.Scan) ([]store.JobSpec, error) {
+				if !opt.Privilege.Raw() {
+					// Record why, per host, so the report shows UDP was not covered.
+					live, _ := st.LiveHosts(ctx, sc.ID)
+					for _, h := range live {
+						if id, err := st.AssetID(ctx, h); err == nil {
+							_ = st.RecordCheckRun(ctx, sc.ID, id, "udp-scan", "skipped", "UDP scanning needs root or sudo (use --sudo or run as root)")
+						}
+					}
+					return nil, nil
+				}
+				return planPortscan(st, opt.ScanChunk)(ctx, sc)
+			},
+			Handle: handleNmap(st, opt.ScanTimeout, "udp.xml", func(job store.Job, xml string) ([]string, error) {
+				return nmap.UDPArgs(res, job.Targets, xml, nopt)
+			}, nopt),
+		})
+	}
 	if res.Template.Nuclei && res.Template.Ports != "" && opt.NucleiDir != "" {
 		stages = append(stages, newNucleiRuntime(st, res, opt).stages()...)
 	}
@@ -120,7 +152,11 @@ func buildStages(res *policy.Resolved, st *store.Store, opt Options) ([]orchestr
 		stages = append(stages, cpeMatchStage(st, deps...))
 	}
 	if res.Native.Enabled && res.Template.Ports != "" {
-		ns, err := nativeStage(st, res)
+		var udpDeps []string
+		if res.Template.UDPTop > 0 {
+			udpDeps = append(udpDeps, StageUDP) // UDP script output feeds the DNS/SNMP/NTP checks
+		}
+		ns, err := nativeStage(st, res, udpDeps...)
 		if err != nil {
 			return nil, err
 		}

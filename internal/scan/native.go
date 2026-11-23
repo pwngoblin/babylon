@@ -19,16 +19,17 @@ const (
 )
 
 // nativeStage runs Babylon's built-in checks over data already collected by
-// earlier stages (knowledge base, services, TLS). It performs no network I/O.
-func nativeStage(st *store.Store, res *policy.Resolved) (orchestrator.Stage, error) {
-	ordered, err := native.Order(native.Builtin(), res.Native.MaxSafety)
+// earlier stages (knowledge base, services, TLS). Read-only checks do no network
+// I/O; probe-level checks (only with --allow-active) send a few read-only GETs.
+func nativeStage(st *store.Store, res *policy.Resolved, extraDeps ...string) (orchestrator.Stage, error) {
+	ordered, err := native.Order(native.Available(res.Native.MaxSafety), res.Native.MaxSafety)
 	if err != nil {
 		return orchestrator.Stage{}, err
 	}
 	return orchestrator.Stage{
 		Name:      StageNative,
 		Class:     ClassNative,
-		DependsOn: []string{StagePortscan},
+		DependsOn: append([]string{StagePortscan}, extraDeps...),
 		Plan: func(ctx context.Context, sc store.Scan) ([]store.JobSpec, error) {
 			svcs, err := st.OpenServices(ctx, sc.ID)
 			if err != nil {

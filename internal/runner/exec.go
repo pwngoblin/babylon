@@ -11,8 +11,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	berr "babylon/internal/errors"
@@ -48,7 +49,7 @@ type Result struct {
 // Run executes spec and returns when the process exits, times out, or ctx is
 // cancelled. On timeout/cancel the whole process group is terminated.
 func Run(ctx context.Context, spec Spec) (*Result, error) {
-	path, err := exec.LookPath(spec.Tool)
+	path, err := resolveTool(spec.Tool)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", berr.ErrToolMissing, spec.Tool)
 	}
@@ -63,7 +64,7 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 	cmd := exec.Command(path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -184,30 +185,6 @@ func consume(r io.Reader, spec Spec, res *Result, cmd *exec.Cmd) error {
 	return nil
 }
 
-// killGroup sends SIGTERM to the process group, waits grace, then SIGKILL.
-// If done is non-nil, a closed done channel short-circuits the wait.
-func killGroup(cmd *exec.Cmd, grace time.Duration, done <-chan struct{}) {
-	if cmd.Process == nil {
-		return
-	}
-	pgid := -cmd.Process.Pid
-	if grace > 0 {
-		_ = syscall.Kill(pgid, syscall.SIGTERM)
-		t := time.NewTimer(grace)
-		defer t.Stop()
-		if done == nil {
-			<-t.C
-		} else {
-			select {
-			case <-t.C:
-			case <-done:
-				return
-			}
-		}
-	}
-	_ = syscall.Kill(pgid, syscall.SIGKILL)
-}
-
 type countingReader struct {
 	r        io.Reader
 	n, max   int64
@@ -239,3 +216,20 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 }
 
 func (t *tailBuffer) String() string { return string(bytes.TrimSpace(t.buf)) }
+
+// resolveTool finds an external program. BABYLON_<TOOL> (upper-case, '-' as
+// '_') overrides the PATH lookup, so a pinned absolute path can be used
+// instead of whatever PATH resolves first.
+func resolveTool(name string) (string, error) {
+	env := "BABYLON_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	if p := os.Getenv(env); p != "" {
+		if !filepath.IsAbs(p) {
+			return "", fmt.Errorf("%s must be an absolute path", env)
+		}
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			return "", fmt.Errorf("%w: %s (%s)", berr.ErrToolMissing, name, env)
+		}
+		return p, nil
+	}
+	return exec.LookPath(name)
+}

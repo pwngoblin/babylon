@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -78,9 +79,18 @@ func RenderPDF(ctx context.Context, r *Report, outPath string) error {
 	if rd.Name == "weasyprint" {
 		cmd = exec.CommandContext(ctx, rd.Path, htmlPath, abs)
 	} else {
-		cmd = exec.CommandContext(ctx, rd.Path, "--headless", "--disable-gpu", "--no-sandbox",
-			"--user-data-dir="+filepath.Join(dir, "profile"), "--no-pdf-header-footer",
-			"--print-to-pdf="+abs, "file://"+htmlPath)
+		args := []string{"--headless", "--disable-gpu", "--user-data-dir=" + filepath.Join(dir, "profile"), "--no-pdf-header-footer", "--print-to-pdf=" + abs}
+		// The report holds text from scanned hosts, so Chrome keeps its sandbox.
+		// It can only be disabled where Chrome refuses to start otherwise (root/containers),
+		// and then only by explicit choice.
+		if os.Getenv("BABYLON_PDF_NO_SANDBOX") == "1" || os.Geteuid() == 0 {
+			args = append(args, "--no-sandbox")
+		}
+		u := filepath.ToSlash(htmlPath)
+		if !strings.HasPrefix(u, "/") {
+			u = "/" + u // Windows drive paths
+		}
+		cmd = exec.CommandContext(ctx, rd.Path, append(args, "file://"+u)...)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s failed: %v: %.300s", rd.Name, err, out)

@@ -185,3 +185,36 @@ func ScanArgs(res *policy.Resolved, targets []string, xmlPath string, o Opts) ([
 	args = append(args, common(xmlPath, o)...)
 	return append(args, targets...), nil
 }
+
+// UDPPorts are the high-value UDP services worth probing (DNS, DHCP, TFTP,
+// RPC, NTP, NetBIOS, SNMP, CLDAP, IKE, syslog, IPMI, OpenVPN, SSDP, SIP, mDNS).
+// A full UDP sweep is far too slow; this list keeps it to seconds per host.
+const UDPPorts = "53,67,68,69,111,123,137,138,161,389,500,514,623,1194,1900,5060,5353"
+
+// UDPArgs builds the targeted UDP scan. UDP scanning needs raw sockets, so it
+// is refused without privilege rather than silently degrading.
+func UDPArgs(res *policy.Resolved, targets []string, xmlPath string, o Opts) ([]string, error) {
+	if err := checkTargets(targets); err != nil {
+		return nil, err
+	}
+	if err := res.Validate(); err != nil {
+		return nil, err
+	}
+	if !o.Privilege.Raw() {
+		return nil, fmt.Errorf("UDP scanning needs root or sudo")
+	}
+	args := []string{"-Pn", "--open", "-sU", "-p", UDPPorts, "-sV", "--version-light"}
+	if res.Template.NSE {
+		expr, err := res.NSE.ScriptExpr()
+		if err != nil {
+			return nil, err
+		}
+		st := o.Timing.ScriptTimeout
+		if st == "" {
+			st = "60s"
+		}
+		args = append(args, "--script", expr, "--script-timeout", st)
+	}
+	args = append(args, common(xmlPath, o)...)
+	return append(args, targets...), nil
+}

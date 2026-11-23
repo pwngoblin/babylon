@@ -19,7 +19,7 @@ import (
 	"babylon/internal/store"
 )
 
-var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "osv"}
+var allFeeds = []string{"nuclei-templates", "kev", "epss", "nvd", "cvelist", "osv"}
 
 type feedsOptions struct {
 	home         string
@@ -28,6 +28,7 @@ type feedsOptions struct {
 	noDownload   bool
 	osv          []string
 	nvdPages     int
+	cveYear      int
 	status       bool
 }
 
@@ -42,6 +43,7 @@ func newFeedsCmd() *cobra.Command {
   kev               CISA Known Exploited Vulnerabilities
   epss              FIRST exploit-prediction scores
   nvd               NVD CVE + affected product/version ranges (powers version matching)
+  cvelist           CVE Program records: version ranges for CVEs NVD has not analysed yet
   osv               OSV.dev ecosystem dumps (Debian, Ubuntu, Alpine, Rocky, Alma, PyPI, npm, Go)
 
 Downloads are conditional (ETag / Last-Modified), so repeat runs are quick. The
@@ -61,6 +63,7 @@ Use --no-download with --templates-dir to index an existing Nuclei checkout offl
 	f.BoolVar(&o.noDownload, "no-download", false, "index only; do not contact the network")
 	f.StringSliceVar(&o.osv, "osv-ecosystems", intel.DefaultOSVEcosystems, "OSV ecosystems to fetch")
 	f.IntVar(&o.nvdPages, "nvd-pages", 0, "stop the NVD download after this many pages of 2000 (seed a partial index; rerun to continue)")
+	f.IntVar(&o.cveYear, "cvelist-from-year", 2024, "cvelistV5: import records from this CVE year onward")
 	f.BoolVar(&o.status, "status", false, "show what is indexed and how old it is, then exit")
 	return cmd
 }
@@ -138,6 +141,19 @@ func runFeeds(ctx context.Context, out io.Writer, o feedsOptions) error {
 				Logf: func(f string, a ...any) { fmt.Fprintf(out, f+"\n", a...) }})
 			if err == nil {
 				fmt.Fprintf(out, "  nvd: %d CVEs indexed (%s)\n", n, time.Since(start).Round(time.Second))
+			}
+			return err
+		})
+		run("cvelist", func() error {
+			fmt.Fprintln(out, "cvelistV5 (version ranges for CVEs NVD has not analysed; ~700 MB download) ...")
+			start := time.Now()
+			n, changed, err := intel.SyncCVEList(ctx, fetch, st, "", tmp, o.cveYear)
+			if err == nil {
+				if changed {
+					fmt.Fprintf(out, "  cvelist: ranges added for %d CVEs (%s)\n", n, time.Since(start).Round(time.Second))
+				} else {
+					fmt.Fprintln(out, "  cvelist: already up to date")
+				}
 			}
 			return err
 		})

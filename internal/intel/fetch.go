@@ -118,6 +118,9 @@ func lastRetryAfter(err error) (time.Duration, bool) {
 }
 
 // toTemp saves a body to a temp file in dir and returns its path.
+// maxDownload bounds any single feed download so a hostile or broken server cannot fill the disk.
+const maxDownload = 4 << 30
+
 func toTemp(dir, pattern string, r io.Reader) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
@@ -126,7 +129,11 @@ func toTemp(dir, pattern string, r io.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(f, r); err != nil {
+	n, err := io.Copy(f, io.LimitReader(r, maxDownload+1))
+	if err == nil && n > maxDownload {
+		err = fmt.Errorf("download exceeds the %d GiB safety limit", maxDownload>>30)
+	}
+	if err != nil {
 		f.Close()
 		os.Remove(f.Name())
 		return "", err

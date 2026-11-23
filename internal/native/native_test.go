@@ -66,7 +66,7 @@ func TestChecksOnRealLabScan(t *testing.T) {
 	if len(env.KB) == 0 {
 		t.Fatal("NSE script output must be stored in the knowledge base at ingest")
 	}
-	ordered, err := Order(Builtin(), policy.SafetyReadOnly)
+	ordered, err := Order(Available(policy.SafetyReadOnly), policy.SafetyReadOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +110,8 @@ func TestChecksOnRealLabScan(t *testing.T) {
 			}
 		}
 	}
-	if ran+skipped != len(Builtin()) || skipped != nreason || ran < 3 || skipped < 8 {
-		t.Fatalf("coverage: ran=%d skipped=%d withReason=%d of %d", ran, skipped, nreason, len(Builtin()))
+	if ran+skipped != len(Available(policy.SafetyReadOnly)) || skipped != nreason || ran < 3 || skipped < 8 {
+		t.Fatalf("coverage: ran=%d skipped=%d withReason=%d of %d", ran, skipped, nreason, len(Available(policy.SafetyReadOnly)))
 	}
 }
 
@@ -252,5 +252,19 @@ func TestSkippedDependencyAndPanicAreRecorded(t *testing.T) {
 	}
 	if f, _ := st.ListFindings(ctx, id, ""); len(f) != 1 || f[0].Confidence != model.ConfConfirmed {
 		t.Fatalf("findings=%+v", f)
+	}
+}
+
+func TestProbeChecksOnlyAvailableWithActiveSafety(t *testing.T) {
+	for _, c := range Available(policy.SafetyReadOnly) {
+		if c.Safety != policy.SafetyReadOnly {
+			t.Errorf("%s must not load without --allow-active", c.ID)
+		}
+	}
+	if len(Available(policy.SafetyProbe)) <= len(Available(policy.SafetyReadOnly)) {
+		t.Error("probe-level checks must load when active probes are allowed")
+	}
+	if _, err := Order(Builtin(), policy.SafetyReadOnly); err == nil {
+		t.Error("Order must refuse probe checks at read-only safety")
 	}
 }

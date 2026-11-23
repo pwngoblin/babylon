@@ -161,3 +161,34 @@ func TestWebTechVersionsFeedTheMatcher(t *testing.T) {
 		}
 	}
 }
+
+func TestKEVWatchFlagsProductWithoutVersion(t *testing.T) {
+	st, id := cpeStore(t)
+	ctx := context.Background()
+	_ = st.ReplaceKEV(ctx, []store.KEVEntry{
+		{CVE: "CVE-2024-1", Vendor: "Ivanti", Product: "Connect Secure"},
+		{CVE: "CVE-2024-2", Vendor: "Ivanti", Product: "Connect Secure"},
+		{CVE: "CVE-2023-9", Vendor: "Other", Product: "Connect Secure"}, // wrong vendor
+	}, store.FeedInfo{Name: "kev"})
+	ingest(t, st, id, "10.0.0.5", "", model.Port{Number: 443, Proto: "tcp", State: "open", Service: model.Service{
+		Name: "https", Product: "Ivanti Connect Secure", CPEs: []string{"cpe:/a:ivanti:connect_secure"}}})
+	all, _ := st.OpenServices(ctx, id)
+	if err := matchHost(ctx, st, id, "10.0.0.5", all); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := st.ListFindings(ctx, id, "")
+	if len(rows) != 1 || rows[0].Confidence != "tentative" || !strings.Contains(rows[0].Evidence, "CVE-2024-1") || strings.Contains(rows[0].Evidence, "CVE-2023-9") {
+		t.Fatalf("kev watch: %+v", rows)
+	}
+	// A product with a version is handled by the version matcher, not the watch.
+	st2, id2 := cpeStore(t)
+	_ = st2.ReplaceKEV(ctx, []store.KEVEntry{{CVE: "CVE-2021-41773", Vendor: "Apache", Product: "HTTP Server"}}, store.FeedInfo{Name: "kev"})
+	ingest(t, st2, id2, "10.0.0.5", "", apache("2.4.49", ""))
+	all, _ = st2.OpenServices(ctx, id2)
+	_ = matchHost(ctx, st2, id2, "10.0.0.5", all)
+	for _, r := range func() []store.FindingRow { x, _ := st2.ListFindings(ctx, id2, ""); return x }() {
+		if r.Family == "Known exploited product" {
+			t.Errorf("versioned service must not get a watch finding: %+v", r)
+		}
+	}
+}

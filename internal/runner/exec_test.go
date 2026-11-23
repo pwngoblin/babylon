@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,21 @@ func TestOnLineErrorStopsProcess(t *testing.T) {
 	})
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("want sentinel, got %v", err)
+	}
+}
+
+func TestResolveToolOverride(t *testing.T) {
+	t.Setenv("BABYLON_NMAP", "relative/nmap")
+	if _, err := resolveTool("nmap"); err == nil {
+		t.Error("a relative override must be refused")
+	}
+	t.Setenv("BABYLON_NMAP", "/definitely/not/here")
+	if _, err := resolveTool("nmap"); err == nil {
+		t.Error("a missing override must fail rather than fall back to PATH")
+	}
+	exe, _ := os.Executable()
+	t.Setenv("BABYLON_NMAP", exe)
+	if p, err := resolveTool("nmap"); err != nil || p != exe {
+		t.Errorf("override not used: %q %v", p, err)
 	}
 }

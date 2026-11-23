@@ -81,6 +81,11 @@ func matchHost(ctx context.Context, st *store.Store, scanID int64, addr string, 
 		}
 		if !stats.Checked {
 			unchecked++
+			if f, ok := kevWatch(ctx, st, s); ok {
+				if err := st.RecordFinding(ctx, scanID, f); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		checked++
@@ -222,4 +227,75 @@ func matchWebTech(ctx context.Context, st *store.Store, scanID int64, addr strin
 		}
 	}
 	return checked, nil
+}
+
+func normName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// kevWatch covers a blind spot of version matching: a product is identified but
+// its version cannot be read (appliances, hardened banners). If CISA lists known
+// exploited vulnerabilities for that product, say so as a tentative finding:
+// it cannot say the host is affected, only that the product is a known target.
+func kevWatch(ctx context.Context, st *store.Store, s store.ServiceInfo) (model.Finding, bool) {
+	prod := normName(s.Product)
+	if len(prod) < 4 {
+		return model.Finding{}, false
+	}
+	vendors := map[string]bool{}
+	cpeProducts := map[string]bool{}
+	for _, c := range s.CPEs {
+		if p, ok := intel.ParseCPE(c); ok {
+			vendors[normName(p.Vendor)] = true
+			cpeProducts[normName(p.Product)] = true
+		}
+	}
+	all, err := st.AllKEV(ctx)
+	if err != nil {
+		return model.Finding{}, false
+	}
+	var hits []store.KEVEntry
+	for _, k := range all {
+		kp, kv := normName(k.Product), normName(k.Vendor)
+		if len(kp) < 4 {
+			continue
+		}
+		// The KEV product must be the service's product (or the CPE product), and the
+		// vendor must agree: through the CPE, or by appearing in the product string.
+		productOK := kp == prod || strings.Contains(prod, kp) || cpeProducts[kp]
+		vendorOK := vendors[kv] || (len(kv) >= 4 && strings.Contains(prod, kv))
+		if productOK && vendorOK {
+			hits = append(hits, k)
+		}
+	}
+	if len(hits) == 0 {
+		return model.Finding{}, false
+	}
+	var ids []string
+	for _, h := range hits {
+		ids = append(ids, h.CVE)
+	}
+	shown := ids
+	if len(shown) > 12 {
+		shown = shown[:12]
+	}
+	return model.Finding{
+		Fingerprint: correlate.Fingerprint(s.Address, s.Port, s.Proto, nil, "kev-watch:"+prod),
+		Address:     s.Address, Port: s.Port, Proto: s.Proto,
+		Title:  fmt.Sprintf("%s is a known exploited product (%d CISA KEV entries); version unknown", s.Product, len(hits)),
+		Family: "Known exploited product", Severity: "medium",
+		Synopsis:    "The product is listed in the CISA Known Exploited Vulnerabilities catalogue, and its version could not be determined.",
+		Description: "Babylon could not read the version of this service, so it cannot tell whether it is affected. Verify the version and patch level; a credentialed scan or the vendor's console will tell.",
+		Remediation: "Identify the exact version and apply the vendor's security updates for the listed CVEs.",
+		Confidence:  model.ConfTentative, Detection: "version", Engine: "cpematch", EngineRef: "kev-watch",
+		CVEs:     nil,
+		Evidence: fmt.Sprintf("Detected product %q on %d/%s with no version. CISA KEV entries for this product: %s", s.Product, s.Port, s.Proto, strings.Join(shown, ", ")),
+		Product:  s.Product, Version: "unknown",
+	}, true
 }

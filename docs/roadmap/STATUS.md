@@ -53,6 +53,13 @@ TODO next: targeted UDP stage (15 ports), ~20 native checks with mock-listener t
 - README rewritten short (install, use, what it does).
 - Ideas not built yet: cvelistV5/Vulnrichment merge (2026 CVE CPE gap), exploit availability (ExploitDB/Metasploit metadata), KEV-product watch, retire.js-style JS library versions, favicon/header/meta-generator fingerprints, trivy for lockfiles on audited hosts, more native checks.
 
+## "Do all" pass (2026-11-23, uncommitted)
+- Security fixes: Chrome sandbox kept for PDF (opt-out env BABYLON_PDF_NO_SANDBOX=1), 4 GiB cap per feed download, SSH first-use key fingerprint printed, `BABYLON_<TOOL>` absolute-path override for nmap/nuclei/etc.
+- Windows builds (runner split into proc_unix.go / proc_windows.go, taskkill). Not run on Windows yet.
+- Scale: scan chunk 128 -> 16 hosts, per-host timeout from timing profile (fast-lan 8m). Cause of the 44-host stall was one giant job; fix is unverified at scale (only loopback may be scanned).
+- New detection: `--deep` Nuclei; web versions -> CVE matcher; KEV product watch (tentative, product known, version unknown); UDP stage (17 ports, needs root/sudo, skip reason recorded otherwise); native probes (Docker API, Kubelet x2, Elasticsearch, CouchDB, etcd, HSTS) only with --allow-active, mock-server tests; cvelistV5 feed (`update-feeds --only cvelist`, NVD always wins): 62,342 CVEs gained ranges, lab 301 -> 310 findings.
+- Not done: Windows credentialed audit (WinRM), macOS advisories, web-app (DAST) mode, exploit-availability tags, Windows live test.
+
 ## Milestone 04: HTML/PDF reports: v0.1 DONE (2026-11-23)
 `internal/report/html.go` (self-contained, CSP meta, no JS, data-driven: sections come from Groups/Hosts/Family, so new finding types need no template change; optional `familyInfo` for titles), `pdf.go` (Chrome/Chromium/weasyprint), `doctor` reports PDF renderer, CLI `scans export --format html|pdf`, web `Export HTML` button + `?format=html`. Test: escaping + no external refs. TODO: per-host credentialed-audit status block (after M02), richer coverage appendix.
 (original spec below)

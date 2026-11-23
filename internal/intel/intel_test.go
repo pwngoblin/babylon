@@ -492,3 +492,128 @@ func TestParseOSVUpstreamCVEs(t *testing.T) {
 		t.Errorf("missing aliases %v in %v", want, rec.Aliases)
 	}
 }
+
+func TestParseCVE5(t *testing.T) {
+	doc := `{"cveMetadata":{"cveId":"CVE-2026-1111","state":"PUBLISHED","datePublished":"2026-05-01T00:00:00Z"},
+	"containers":{"cna":{"descriptions":[{"lang":"en","value":"Bug in Foo"}],
+	  "affected":[{"vendor":"Acme","product":"Foo Server","defaultStatus":"unaffected","versions":[
+	    {"version":"1.0","lessThan":"1.4.2","status":"affected","versionType":"semver"},
+	    {"version":"2.0","status":"affected"},
+	    {"version":"1.4.2","status":"unaffected"},
+	    {"version":"abcdef0123","lessThan":"*","status":"affected","versionType":"git"},
+	    {"version":"0","lessThanOrEqual":"3.1","status":"affected"}]}]},
+	 "adp":[{"metrics":[{"cvssV3_1":{"baseScore":8.8,"vectorString":"CVSS:3.1/AV:N"}}],
+	   "affected":[{"vendor":"x","product":"y","cpes":["cpe:2.3:a:acme:foo_server:*:*:*:*:*:*:*:*"],"versions":[{"version":"1.0","lessThan":"1.4.2","status":"affected"}]}]}]}}`
+	rec, ok, err := ParseCVE5([]byte(doc))
+	if err != nil || !ok {
+		t.Fatal(err, ok)
+	}
+	if rec.ID != "CVE-2026-1111" || rec.CVSS == nil || *rec.CVSS != 8.8 || rec.Description != "Bug in Foo" {
+		t.Errorf("record: %+v", rec)
+	}
+	want := map[string]bool{
+		"acme/foo_server <1.4.2 >=1.0": false, // CNA name form
+		"acme/foo_server exact 2.0":    false,
+		"acme/foo_server <=3.1":        false,
+	}
+	for _, m := range rec.Matches {
+		key := ""
+		switch {
+		case m.EndExcl == "1.4.2" && m.StartIncl == "1.0":
+			key = "acme/foo_server <1.4.2 >=1.0"
+		case m.Exact == "2.0":
+			key = "acme/foo_server exact 2.0"
+		case m.EndIncl == "3.1" && m.StartIncl == "":
+			key = "acme/foo_server <=3.1"
+		}
+		if m.Vendor == "acme" && m.Product == "foo_server" {
+			want[key] = true
+		}
+		if m.StartIncl == "abcdef0123" || m.Exact == "1.4.2" {
+			t.Errorf("git/unaffected versions must be skipped: %+v", m)
+		}
+	}
+	for k, v := range want {
+		if !v {
+			t.Errorf("missing %s in %+v", k, rec.Matches)
+		}
+	}
+	if _, ok, _ := ParseCVE5([]byte(`{"cveMetadata":{"cveId":"CVE-1","state":"REJECTED"}}`)); ok {
+		t.Error("rejected records must be ignored")
+	}
+}
+
+func buildCVEListArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var inner bytes.Buffer
+	zi := zip.NewWriter(&inner)
+	for name, body := range files {
+		w, _ := zi.Create(name)
+		w.Write([]byte(body))
+	}
+	zi.Close()
+	var outer bytes.Buffer
+	zo := zip.NewWriter(&outer)
+	w, _ := zo.Create("cves.zip")
+	w.Write(inner.Bytes())
+	zo.Close()
+	return outer.Bytes()
+}
+
+func cve5Doc(id, vendor, product, fixed string) string {
+	return fmt.Sprintf(`{"cveMetadata":{"cveId":"%s","state":"PUBLISHED"},"containers":{"cna":{"descriptions":[{"lang":"en","value":"d"}],
+	 "affected":[{"vendor":"%s","product":"%s","versions":[{"version":"1.0","lessThan":"%s","status":"affected"}]}]}}}`, id, vendor, product, fixed)
+}
+
+func TestSyncCVEListFillsGapsAndNeverOverridesNVD(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	// CVE-2026-0002 is already analysed by NVD with its own range; cvelist must not touch it.
+	if err := st.UpsertCVEs(ctx, []store.CVERecord{{ID: "CVE-2026-0002", Description: "nvd text", Status: "Analyzed",
+		Matches: []store.CPEMatch{{Vendor: "acme", Product: "foo", EndExcl: "9.9"}}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	archive := buildCVEListArchive(t, map[string]string{
+		"cves/2026/0xxx/CVE-2026-0001.json": cve5Doc("CVE-2026-0001", "Acme", "Foo", "2.0"),
+		"cves/2026/0xxx/CVE-2026-0002.json": cve5Doc("CVE-2026-0002", "Acme", "Foo", "1.5"),
+		"cves/2019/0xxx/CVE-2019-0001.json": cve5Doc("CVE-2019-0001", "Acme", "Foo", "3.0"), // before minYear
+	})
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" {
+			fmt.Fprintf(w, `{"tag_name":"cve_t1","assets":[{"name":"2026-01-01_all_CVEs_at_midnight.zip.zip","browser_download_url":"%s/dl"}]}`, srv.URL)
+			return
+		}
+		w.Write(archive)
+	}))
+	defer srv.Close()
+
+	n, changed, err := SyncCVEList(ctx, fastFetcher(), st, srv.URL+"/api", t.TempDir(), 2024)
+	if err != nil || !changed || n != 1 {
+		t.Fatalf("n=%d changed=%v err=%v (only CVE-2026-0001 should be added)", n, changed, err)
+	}
+	var src, ver string
+	st.DB.QueryRow(`SELECT source, v_end_excl FROM cpe_match WHERE cve_id='CVE-2026-0001'`).Scan(&src, &ver)
+	if src != "cvelist" || ver != "2.0" {
+		t.Errorf("gap CVE: %s %s", src, ver)
+	}
+	var cnt int
+	st.DB.QueryRow(`SELECT COUNT(*) FROM cpe_match WHERE cve_id='CVE-2026-0002'`).Scan(&cnt)
+	st.DB.QueryRow(`SELECT v_end_excl FROM cpe_match WHERE cve_id='CVE-2026-0002'`).Scan(&ver)
+	if cnt != 1 || ver != "9.9" {
+		t.Errorf("NVD ranges must win: count=%d end=%s", cnt, ver)
+	}
+	var d string
+	st.DB.QueryRow(`SELECT description FROM cve WHERE cve_id='CVE-2026-0002'`).Scan(&d)
+	if d != "nvd text" {
+		t.Errorf("NVD description overwritten: %q", d)
+	}
+	st.DB.QueryRow(`SELECT COUNT(*) FROM cve WHERE cve_id='CVE-2019-0001'`).Scan(&cnt)
+	if cnt != 0 {
+		t.Error("records before the minimum year must not be imported")
+	}
+	// Same release again: nothing to do.
+	if _, changed, err := SyncCVEList(ctx, fastFetcher(), st, srv.URL+"/api", t.TempDir(), 2024); err != nil || changed {
+		t.Errorf("unchanged release must be skipped: changed=%v err=%v", changed, err)
+	}
+}
