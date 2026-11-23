@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0-beta (unreleased)
+## 0.1.1
 
 Everything since v0.1.0.
 
